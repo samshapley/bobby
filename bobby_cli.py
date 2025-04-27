@@ -196,7 +196,7 @@ class BobbyCLI:
                             current_tool["input"] = json.loads(current_tool["partial_json"])
                             tool_calls.append(current_tool)
                         except json.JSONDecodeError as e:
-                            logger.error(f"Failed to parse tool JSON: {e}")
+                            print(f"[bold red]Error decoding JSON for tool {current_tool['name']}:[/bold red] {e}")
                         
                         in_tool_block = False
                         current_tool = None
@@ -206,7 +206,7 @@ class BobbyCLI:
                     live.update(get_panel())
         
         return current_text_buffer, tool_calls, not in_tool_block
-    
+        
     def process_question_streaming(self, question: str):
         # Start without displaying a loader
         result_holder = {}
@@ -277,6 +277,21 @@ class BobbyCLI:
 
                         elif event.type == "content_block_delta" and event.delta.type == "input_json_delta" and in_tool:
                             cur_tool["json"] += event.delta.partial_json
+                            
+                            # IMPORTANT: Keep updating the loader even during tool json building
+                            now = time.time() - start_time
+                            loader = self.render_loader(now)
+                            if content_buffer.strip():
+                                content_panel = Panel(
+                                    content_buffer, 
+                                    title="[bold blue]Bobby[/bold blue]", 
+                                    border_style="blue",
+                                    expand=True
+                                )
+                                group_display = Group(loader, content_panel)
+                            else:
+                                group_display = loader
+                            live.update(group_display)
 
                         elif event.type == "content_block_stop" and in_tool:
                             tool_calls.append(cur_tool)
@@ -304,7 +319,7 @@ class BobbyCLI:
                     live.update(final_display)
                 
                 except Exception as e:
-                    logger.exception("Error in streaming process")
+                    # Handle any exceptions that occur during streaming
                     console.print(f"\n[bold red]Streaming error:[/bold red] {str(e)}")
                     break
             
@@ -317,31 +332,61 @@ class BobbyCLI:
                 
                 # Process each tool call
                 tool_results = []
-                for tool in tool_calls:
-                    tool_input = json.loads(tool["json"])
-                    tool_id = tool["id"]
-                    tool_name = tool["name"]
-                    
-                    response_content.append({
-                        "type": "tool_use",
-                        "id": tool_id,
-                        "name": tool_name,
-                        "input": tool_input
-                    })
-                    
-                    # Display and execute the tool
-                    self.display_tool_call(tool_name, tool_input)
-                    
-                    with console.status(f"[cyan]Executing {tool_name}...", spinner="arc"):
-                        tool_result = self.core.process_tool_call(tool_name, tool_input)
-                    
-                    self.display_results(tool_result)
-                    
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "content": tool_result
-                    })
+                
+                # Create a separate thread to keep updating the loader while processing tools
+                stop_loader_thread = False
+                loader_time = time.time() - start_time  # Continue from where we left off
+                
+                def loader_updater():
+                    with Live(console=console, refresh_per_second=4) as tool_live:
+                        while not stop_loader_thread:
+                            now = time.time() - start_time
+                            loader = self.render_loader(now)
+                            tool_live.update(loader)
+                            time.sleep(0.25)
+                
+                # Start the loader thread before processing tools
+                loader_thread = threading.Thread(target=loader_updater)
+                loader_thread.daemon = True
+                loader_thread.start()
+                
+                try:
+                    for tool in tool_calls:
+                        tool_input = json.loads(tool["json"])
+                        tool_id = tool["id"]
+                        tool_name = tool["name"]
+                        
+                        response_content.append({
+                            "type": "tool_use",
+                            "id": tool_id,
+                            "name": tool_name,
+                            "input": tool_input
+                        })
+                        
+                        # Stop the loader temporarily to show tool call
+                        stop_loader_thread = True
+                        if loader_thread.is_alive():
+                            loader_thread.join(0.5)
+                        
+                        # Display the tool call
+                        self.display_tool_call(tool_name, tool_input)
+                        
+                        # Start a new loader for tool execution
+                        with console.status(f"[cyan]Executing {tool_name}...", spinner="arc"):
+                            tool_result = self.core.process_tool_call(tool_name, tool_input)
+                        
+                        self.display_results(tool_result)
+                        
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": tool_result
+                        })
+                finally:
+                    # Make sure we stop the loader thread
+                    stop_loader_thread = True
+                    if loader_thread.is_alive():
+                        loader_thread.join(0.5)
                 
                 # Add the assistant's response with tool calls to messages
                 messages.append({"role": "assistant", "content": response_content})
