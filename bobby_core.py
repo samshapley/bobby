@@ -693,6 +693,7 @@ The user is not a database expert, so explain your approach in simple terms. Alw
             self.add_to_memory(messages[-2])  # Assistant's response with tool call
             self.add_to_memory(messages[-1])  # Tool result
         
+        # Create a new streaming response from Claude
         return self.client.messages.create(
             model=self.model,
             system=system_prompt,
