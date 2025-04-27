@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, Mock, mock_open
 import os
 import json
-from police_api_extractor.extractors.neighborhoods import NeighborhoodExtractor
+from bobby.police_api.extractors.neighborhoods import NeighborhoodExtractor
 
 class TestNeighborhoodExtractor(unittest.TestCase):
     """

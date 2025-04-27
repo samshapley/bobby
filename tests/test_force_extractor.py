@@ -4,7 +4,7 @@ import os
 import json
 import tempfile
 import csv
-from police_api_extractor.extractors.forces import ForceExtractor
+from bobby.police_api.extractors.forces import ForceExtractor
 
 class TestForceExtractor(unittest.TestCase):
     """

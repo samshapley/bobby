@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 # Import the enhanced data pull script
-from enhanced_data_pull import (
+from update_database import (
     extract_all_data,
     create_sqlite_database,
     ensure_directories,

@@ -3,3 +3,4 @@ pandas
 anthropic
 rich
 tabulate
+pytest

@@ -4,14 +4,14 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(
-    name="uk-police-api-extractor",
+    name="bobby",
     version="0.1.0",
-    author="UK Police API Extractor Team",
+    author="Bobby Project Team",
     author_email="example@example.com",
-    description="A Python library for extracting data from the UK Police Data API",
+    description="A Python toolkit for accessing and analyzing UK Police Data",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/username/uk-police-api-extractor",
+    url="https://github.com/samshapley/bobby",
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -24,6 +24,7 @@ setup(
     python_requires=">=3.6",
     install_requires=[
         "requests>=2.25.0",
+        "rich>=12.0.0",  # For colorful CLI
     ],
     extras_require={
         "dev": [
@@ -31,5 +32,14 @@ setup(
             "pytest-cov>=2.10.0",
             "black>=20.8b1",
         ],
+    },
+    entry_points={
+        "console_scripts": [
+            "bobby=bobby.cli:main",  # Command-line entry point
+        ],
+    },
+    include_package_data=True,
+    package_data={
+        "": ["*.json", "*.md"],
     },
 )

@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, Mock, mock_open
 import requests
 import json
-from police_api_extractor.client import UKPoliceAPIClient
+from bobby.police_api.client import UKPoliceAPIClient
 
 class TestUKPoliceAPIClient(unittest.TestCase):
     """

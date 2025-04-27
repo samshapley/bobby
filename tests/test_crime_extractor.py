@@ -4,7 +4,7 @@ import os
 import json
 import tempfile
 import csv
-from police_api_extractor.extractors.crimes import CrimeExtractor
+from bobby.police_api.extractors.crimes import CrimeExtractor
 
 class TestCrimeExtractor(unittest.TestCase):
     """
