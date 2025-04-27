@@ -13,12 +13,14 @@ import anthropic
 from typing import Dict, List, Union, Any, Optional
 from tabulate import tabulate
 
-## add report creation system
-## report conversion to pdf from markdown
-## add missing data handling and collection so agent can roast police departments
-## add data on bootup
-## add ask for anthropic key if not set
+## add report creation system DONE
+## report conversion to pdf from markdown (not working)
+## add missing data handling and collection so agent can roast police departments - no
+## add data on bootup - yes but not necessary for demo
+## add ask for anthropic key if not set - why does it ask every time
 ## ensure all fully packaged and cleaned up for public release
+
+## now just clean up how it look at get more dates
 
 # Import the report tools
 from bobby.report_tools import (
