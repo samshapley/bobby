@@ -53,12 +53,37 @@ Database contains UK Police data with the following main tables:
 4. Neighborhood-related Tables:
    - neighborhoods_[force_id]: Neighborhoods under specific police forces
    - neighborhood_details_[force_id]_[neighborhood_id]: Details about specific neighborhoods
+   - neighborhood_boundary_[force_id]_[neighborhood_id]: Geographic boundaries of neighborhoods
+   - neighborhood_team_[force_id]_[neighborhood_id]: Team members of neighborhoods
+   - neighborhood_events_[force_id]_[neighborhood_id]: Events in neighborhoods
+   - neighborhood_priorities_[force_id]_[neighborhood_id]: Priorities for neighborhoods
 
 5. Crime Categories Table:
    - name: Name of crime category
    - url: API URL for the category
 
-Cities available in the database: london, manchester, birmingham, leeds, liverpool
+6. Stop and Search Tables - Named like stops_[force_id]_[date]:
+   - age_range: Age range of the person stopped
+   - gender: Gender of the person stopped
+   - object_of_search: Reason for the stop
+   - datetime: Date and time of the stop
+   - outcome: Outcome of the stop and search
+   - operation_name: Name of the operation (if applicable)
+   - type: Type of stop and search
+   - officer_defined_ethnicity: Ethnicity as defined by the officer
+   - self_defined_ethnicity: Ethnicity as defined by the person stopped
+
+7. Additional Stop and Search Tables:
+   - stops_area_[city]_[date]: Stops within a 1-mile radius of city centers
+   - stops_at_location_[city]_[date]: Stops at specific locations
+   - stops_no_location_[force_id]_[date]: Stops with no location information
+
+8. Additional Crime Tables:
+   - crimes_at_location_[city]_[date]: Crimes at specific locations
+   - crimes_no_location_[force_id]_[date]: Crimes with no location information
+   - crime_last_updated_[date]: Information about when crime data was last updated
+
+Cities available in the database: london, manchester, birmingham, leeds, liverpool, glasgow, newcastle, cardiff
 """
     
     def __init__(self, db_path: str, api_key: Optional[str] = None):

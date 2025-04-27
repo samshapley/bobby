@@ -250,9 +250,18 @@ def main():
     parser.add_argument('--question', type=str, help='Question to answer (if not in interactive mode)')
     
     args = parser.parse_args()
-    
+
+    # Check for Anthropic API key
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        from rich.prompt import Prompt
+        api_key = Prompt.ask("[bold yellow]Enter your Anthropic API key[/bold yellow]")
+        os.environ["ANTHROPIC_API_KEY"] = api_key  # Set for current process
+
     try:
         cli = BobbyCLI(args.db_path)
+        # Optionally, you could pass api_key to BobbyCore if you want to support explicit key passing
+        # cli = BobbyCLI(args.db_path, api_key=api_key)
         
         if args.interactive:
             cli.run_interactive_mode()

@@ -1,0 +1,46 @@
+{
+    "api": {
+        "timeout": 120
+    },
+    "extraction": {
+        "csv_dir": "csv_data",
+        "db_path": "db_data/police_data.db",
+        "replace_db": true,
+        "save_metadata": true,
+        "historical_months": 2
+    },
+    "cities": [
+        {"name": "london", "lat": 51.5074, "lng": -0.1278},
+        {"name": "manchester", "lat": 53.4808, "lng": -2.2426},
+        {"name": "birmingham", "lat": 52.4862, "lng": -1.8904},
+        {"name": "leeds", "lat": 53.8008, "lng": -1.5491},
+        {"name": "glasgow", "lat": 55.8642, "lng": -4.2518},
+        {"name": "liverpool", "lat": 53.4084, "lng": -2.9916},
+        {"name": "newcastle", "lat": 54.9783, "lng": -1.6178},
+        {"name": "cardiff", "lat": 51.4816, "lng": -3.1791}
+    ],
+    "data_types": {
+        "crimes": {
+            "extract": true,
+            "no_location": true,
+            "at_location": true
+        },
+        "forces": {
+            "extract": true
+        },
+        "neighborhoods": {
+            "extract": true,
+            "depth": 5,
+            "boundaries": true,
+            "teams": true,
+            "events": true,
+            "priorities": true
+        },
+        "stops": {
+            "extract": true,
+            "no_location": true,
+            "by_area": true,
+            "at_location": true
+        }
+    }
+}
