@@ -26,7 +26,6 @@ class BobbyCLI:
         """Initialize the CLI with database path."""
         self.core = BobbyCore(db_path)
         
-# ... existing code ...
     def display_animation(self):
         """Display a cool title animation with police lights."""
         import itertools
@@ -102,10 +101,104 @@ class BobbyCLI:
         """Display agent's thinking process."""
         if text.strip():
             console.print(Panel(text, title="[bold blue]Bobby[/bold blue]", border_style="blue"))
+            
+    def display_streaming_agent_thought(self, text: str):
+        """Display agent's thinking process as it streams in."""
+        if text.strip():
+            # Create a live display for the streaming content
+            console.print(text, end="", markup=False)
+    
+    def display_and_end_stream_panel(self):
+        """End the current streaming panel."""
+        console.print()  # Add newline after streaming text
     
     def process_question(self, question: str):
-        """Process a user question and display the analysis process."""
+        """Process a user question and display the analysis process with streaming."""
+        self.process_question_streaming(question)
+    
+    def _handle_stream_events(self, stream):
+        """Handle all streaming events and return the response content and tool calls."""
+        current_text_buffer = ""
+        tool_calls = []
+        current_tool = None
+        panel_active = True
+        
+        # Setup for live display
+        from rich.live import Live
+        
+        # Function to get the current panel
+        def get_panel():
+            return Panel(current_text_buffer, title="[bold blue]Bobby[/bold blue]", border_style="blue")
+        
+        # Start with an empty panel
+        with Live(get_panel(), refresh_per_second=8, console=console) as live:
+            for event in stream:
+                # Handle different types of streaming events
+                if event.type == "message_start":
+                    pass  # Panel already started
+                
+                elif event.type == "content_block_start":
+                    if event.content_block.type == "text":
+                        pass  # Continue in panel
+                    elif event.content_block.type == "tool_use":
+                        panel_active = False
+                        current_tool = {
+                            "id": event.content_block.id,
+                            "name": event.content_block.name,
+                            "input": {}
+                        }
+                        # Exit live to display tool
+                        break
+                
+                elif event.type == "content_block_delta":
+                    if event.delta.type == "text_delta":
+                        # Update text buffer and refresh panel
+                        current_text_buffer += event.delta.text
+                        live.update(get_panel())
+                    
+                    elif event.delta.type == "input_json_delta" and current_tool:
+                        # Exit live to display tool
+                        panel_active = False
+                        
+                        # Accumulate tool input JSON
+                        if "partial_json" not in current_tool:
+                            current_tool["partial_json"] = ""
+                        current_tool["partial_json"] += event.delta.partial_json
+                        
+                        # Process the JSON if we have enough
+                        try:
+                            import json
+                            current_tool["input"] = json.loads(current_tool["partial_json"])
+                            tool_calls.append(current_tool)
+                            break  # Exit live to handle tool
+                        except json.JSONDecodeError:
+                            # Not complete JSON yet, continue
+                            pass
+                
+                elif event.type == "content_block_stop":
+                    if current_tool and current_tool.get("partial_json"):
+                        # Parse the accumulated JSON for tool input
+                        import json
+                        try:
+                            current_tool["input"] = json.loads(current_tool["partial_json"])
+                            tool_calls.append(current_tool)
+                        except json.JSONDecodeError:
+                            pass  # Handle partial JSON gracefully
+                        current_tool = None
+                        panel_active = False
+                        break
+                
+                elif event.type == "message_stop":
+                    # Final update
+                    live.update(get_panel())
+                    panel_active = False
+                    
+        return current_text_buffer, tool_calls, panel_active
+    
+    def process_question_streaming(self, question: str):
+        """Process a user question and display the analysis process with streaming."""
         from rich.align import Align
+        from rich.live import Live
 
         # Custom blue/red flashing loader with timer
         def get_loader_panel(frame: int, elapsed: float):
@@ -122,24 +215,13 @@ class BobbyCLI:
                 height=3
             )
 
-        # Panel to show after thinking is done
-        def get_thought_panel(elapsed: float):
-            msg = f"[bold white]Thought for {elapsed:.1f} seconds[/bold white]"
-            return Panel(
-                Align.center(Text.from_markup(msg), vertical="middle"),
-                border_style="white",
-                box=box.ROUNDED,
-                height=3
-            )
-
-        # Run the animation while waiting for get_conversation_parts
+        # Run the animation while waiting for streaming setup
         with Live(get_loader_panel(0, 0.0), refresh_per_second=10, console=console) as live:
-            done = False
-            result = [None]
             import threading
+            result = [None]
 
             def worker():
-                result[0] = self.core.get_conversation_parts(question)
+                result[0] = self.core.get_conversation_parts_streaming(question)
 
             t = threading.Thread(target=worker)
             t.start()
@@ -153,59 +235,68 @@ class BobbyCLI:
             t.join()
             total_elapsed = time.time() - start_time
             conversation_parts = result[0]
-            # Show "Thought in N.N seconds" for 1 second
-            live.update(get_thought_panel(total_elapsed))
-            time.sleep(1)
+            
+            # Show "Started streaming" message briefly
+            time.sleep(0.3)
 
         messages = conversation_parts['messages']
-        response = conversation_parts['response']
+        stream = conversation_parts['stream']
         system_prompt = conversation_parts['system_prompt']
         
-        # Process the response
-        while True:
-            has_tool_calls = False
-            
-            for block in response.content:
-                if block.type == "text":
-                    self.display_agent_thought(block.text)
-                elif block.type == "tool_use":
-                    has_tool_calls = True
-                    tool_name = block.name
-                    tool_input = block.input
-                    tool_id = block.id
+        # Process the streaming response
+        try:
+            while True:  # Loop to handle iterative tool calls
+                current_text_buffer, tool_calls, is_in_panel = self._handle_stream_events(stream)
+                
+                if tool_calls:
+                    # Package the response content for message update
+                    response_content = []
+                    if current_text_buffer.strip():
+                        response_content.append({"type": "text", "text": current_text_buffer})
                     
-                    # Display the tool call
-                    self.display_tool_call(tool_name, tool_input)
-                    
-                    # Execute the tool with a progress indicator
-                    with console.status(f"[cyan]Executing {tool_name}...", spinner="arc"):
-                        tool_result = self.core.process_tool_call(tool_name, tool_input)
-                    
-                    # Display results
-                    self.display_results(tool_result)
-                    
+                    for tool in tool_calls:
+                        response_content.append({
+                            "type": "tool_use",
+                            "id": tool["id"],
+                            "name": tool["name"],
+                            "input": tool["input"]
+                        })
+                        
+                        # Display and execute the tool
+                        self.display_tool_call(tool["name"], tool["input"])
+                        
+                        with console.status(f"[cyan]Executing {tool['name']}...", spinner="arc"):
+                            tool_result = self.core.process_tool_call(tool["name"], tool["input"])
+                        
+                        self.display_results(tool_result)
+                        
                     # Add to messages for next turn
-                    messages.append({"role": "assistant", "content": response.content})
+                    messages.append({"role": "assistant", "content": response_content})
                     messages.append({
                         "role": "user",
                         "content": [{
                             "type": "tool_result",
-                            "tool_use_id": tool_id,
+                            "tool_use_id": tool_calls[0]["id"],
                             "content": tool_result
                         }]
                     })
                     
-                    # Get next response
+                    # Get next streaming response
                     with console.status("[bold white]Digesting results...", spinner="dots"):
-                        response = self.core.process_next_turn(messages, response, system_prompt)
+                        stream = self.core.process_next_turn_streaming(messages, response_content, system_prompt)
+                    
+                    # Continue with the next iteration
+                    continue
+                else:
+                    # No tools, just end
+                    if current_text_buffer.strip():
+                        # Add final response to memory
+                        final_response = {"role": "assistant", "content": [{"type": "text", "text": current_text_buffer}]}
+                        self.core.add_to_memory(final_response)
                     break
-            
-            if not has_tool_calls:
-                # Add final response to memory
-                if response.content:
-                    final_response = {"role": "assistant", "content": response.content}
-                    self.core.add_to_memory(final_response)
-                break
+                
+        except Exception as e:
+            console.print(f"\n[bold red]Streaming error:[/bold red] {str(e)}")
     
     def run_interactive_mode(self):
         """Run the interactive mode with a colorful prompt."""
@@ -233,7 +324,7 @@ class BobbyCLI:
                     continue
                 
                 console.print()
-                self.process_question(question)
+                self.process_question_streaming(question)
                 console.print(f"\n[dim]{'─' * console.width}[/dim]")
             except KeyboardInterrupt:
                 console.print("\n[yellow]Interrupted by user[/yellow]")
@@ -266,7 +357,7 @@ def main():
         if args.interactive:
             cli.run_interactive_mode()
         elif args.question:
-            cli.process_question(args.question)
+            cli.process_question_streaming(args.question)
         else:
             parser.print_help()
     except Exception as e:

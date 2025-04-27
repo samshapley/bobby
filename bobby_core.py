@@ -13,11 +13,11 @@ import anthropic
 from typing import Dict, List, Union, Any, Optional
 from tabulate import tabulate
 
-## add report creation system DONE
-## report conversion to pdf from markdown (not working)
-## add missing data handling and collection so agent can roast police departments - no
-## add data on bootup - yes but not necessary for demo
-## add ask for anthropic key if not set - why does it ask every time
+## add report creation system
+## report conversion to pdf from markdown
+## add missing data handling and collection so agent can roast police departments
+## add data on bootup
+## add ask for anthropic key if not set
 ## ensure all fully packaged and cleaned up for public release
 
 ## now just clean up how it look at get more dates
@@ -361,6 +361,59 @@ Query Examples:
             except Exception as e:
                 return f"Error: {str(e)}"
         
+        
+        # Report tools
+        elif tool_name == "create_or_update_report":
+            try:
+                result = create_or_update_report(
+                    title=tool_input["title"],
+                    label=tool_input["label"],
+                    abstract=tool_input.get("abstract", "")
+                )
+                return self.format_tool_result(result)
+            except Exception as e:
+                return f"Error creating/updating report: {str(e)}"
+                
+        elif tool_name == "create_or_update_report_section":
+            try:
+                result = create_or_update_report_section(
+                    report_label=tool_input["report_label"],
+                    header=tool_input["header"],
+                    header_level=tool_input["header_level"],
+                    content=tool_input["content"],
+                    section_label=tool_input["section_label"]
+                )
+                return self.format_tool_result(result)
+            except Exception as e:
+                return f"Error creating/updating report section: {str(e)}"
+                
+        elif tool_name == "create_report_pdf":
+            try:
+                result = create_report_pdf(
+                    report_label=tool_input["report_label"],
+                    output_path=tool_input.get("output_path")
+                )
+                return self.format_tool_result(result)
+            except Exception as e:
+                return f"Error creating PDF: {str(e)}"
+                
+        elif tool_name == "list_available_reports":
+            try:
+                result = list_available_reports()
+                return self.format_tool_result(result)
+            except Exception as e:
+                return f"Error listing reports: {str(e)}"
+                
+        elif tool_name == "get_report_preview":
+            try:
+                result = get_report_preview(
+                    report_label=tool_input["report_label"]
+                )
+                return self.format_tool_result(result)
+            except Exception as e:
+                return f"Error getting report preview: {str(e)}"
+                
+                
         # Report tools
         elif tool_name == "create_or_update_report":
             try:
@@ -567,4 +620,85 @@ The user is not a database expert, so explain your approach in simple terms. Alw
             max_tokens=4000,
             temperature=0,
             tools=self.tools
+        )
+        
+    def get_conversation_parts_streaming(self, question: str):
+        """Get Claude's streaming response with tool calls parsed and ready for processing."""
+        # Get available tables to include in the prompt
+        available_tables = self.get_available_tables()
+        tables_info = "\nAvailable tables in the database:\n" + "\n".join(available_tables)
+        
+        # Create system prompt if not already defined
+        if not self.system_prompt:
+            self.system_prompt = f"""
+You are a helpful assistant that answers questions about UK Police data by writing and executing SQL queries.
+
+{self.DB_SCHEMA}
+
+{tables_info}
+
+To answer the user's questions:
+1. Analyze what data is needed to answer the question
+2. Determine which database tables contain the needed information
+3. Write appropriate SQL queries to extract the data
+4. Use the query_database tool for single queries or batch_query tool for multiple queries
+5. Analyze the results and provide a clear, concise answer
+
+Guidelines for SQL queries:
+- Use proper SQLite syntax
+- Use SELECT COUNT(*) for counting records
+- Use GROUP BY for aggregating data
+- Use JOIN to combine data from different tables
+- Use WHERE clauses to filter data
+- Limit results to a reasonable number with LIMIT when returning large datasets
+
+The user is not a database expert, so explain your approach in simple terms. Always provide context for your answers.
+"""
+        
+        # Use the existing conversation memory if available, otherwise start fresh
+        if not self.conversation_memory:
+            messages = []
+        else:
+            messages = self.conversation_memory.copy()
+        
+        # Add the new user question to messages
+        messages.append({"role": "user", "content": question})
+        
+        # Add the new question to the conversation memory
+        self.add_to_memory({"role": "user", "content": question})
+        
+        # Get initial streaming response from Claude
+        stream = self.client.messages.create(
+            model=self.model,
+            system=self.system_prompt,
+            messages=messages,
+            max_tokens=4000,
+            temperature=0,
+            tools=self.tools,
+            stream=True  # Enable streaming
+        )
+        
+        # Return the parts of the conversation
+        return {
+            "messages": messages,
+            "stream": stream,
+            "system_prompt": self.system_prompt
+        }
+    
+    def process_next_turn_streaming(self, messages, previous_response_content, system_prompt):
+        """Process the next turn of the conversation after tool results with streaming."""
+        # Update conversation memory with assistant response and tool results
+        # Note: These should be the last two messages in the messages list
+        if len(messages) >= 2:
+            self.add_to_memory(messages[-2])  # Assistant's response with tool call
+            self.add_to_memory(messages[-1])  # Tool result
+        
+        return self.client.messages.create(
+            model=self.model,
+            system=system_prompt,
+            messages=messages,
+            max_tokens=4000,
+            temperature=0,
+            tools=self.tools,
+            stream=True  # Enable streaming
         )
