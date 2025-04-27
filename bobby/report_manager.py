@@ -14,10 +14,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 import logging
+import sys
 from typing import Dict, List, Optional, Union, Any
-import markdown
-import pdfkit
-import jinja2
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -432,7 +430,7 @@ class ReportManager:
         report_label: str, 
         output_path: Optional[str] = None
     ) -> Optional[str]:
-        """Generate a PDF from a report using reportlab.
+        """Generate a PDF from a report using markdown-pdf.
         
         Args:
             report_label: Label of the report to convert
@@ -466,132 +464,79 @@ class ReportManager:
             output_path = os.path.join(desktop_path, filename)
         
         try:
-            # Try using markdown2pdf from weasyprint if available
+            # Try using markdown-pdf
             try:
-                from markdown2pdf import convert
-                convert(markdown_content, output_path)
-                logger.info(f"Generated PDF report with markdown2pdf: {output_path}")
-                return output_path
-            except ImportError:
-                logger.info("markdown2pdf not available, trying reportlab...")
-            
-            # If markdown2pdf is not available, try reportlab
-            try:
-                from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-                from reportlab.lib.units import inch
-                from reportlab.lib.pagesizes import letter
+                from markdown_pdf import MarkdownPdf, Section
                 
-                # Create a basic PDF document
-                doc = SimpleDocTemplate(
-                    output_path,
-                    pagesize=letter,
-                    rightMargin=72, leftMargin=72,
-                    topMargin=72, bottomMargin=72
-                )
+                # Create a PDF with table of contents from headings up to level 3
+                pdf = MarkdownPdf(toc_level=3)
                 
-                # Define styles
-                styles = getSampleStyleSheet()
-                title_style = styles['Title']
-                normal_style = styles['Normal']
+                # First create a combined markdown document with proper heading hierarchy
+                complete_markdown = f"# {report.title}\n\n"
                 
-                # Convert markdown to basic content
-                # This is a very simple conversion and doesn't handle all markdown features
-                story = []
-                
-                # Add title
-                story.append(Paragraph(report.title, title_style))
-                story.append(Spacer(1, 0.25*inch))
-                
-                # Add abstract if exists
                 if report.abstract:
-                    story.append(Paragraph(f"<i>{report.abstract}</i>", normal_style))
-                    story.append(Spacer(1, 0.25*inch))
+                    complete_markdown += f"*{report.abstract}*\n\n---\n\n"
                 
-                # Very basic markdown parsing
-                lines = markdown_content.split("\n")
-                current_paragraph = ""
+                # Add each section of the report, ensuring proper heading hierarchy
+                for section_label in report.section_order:
+                    if section_label in report.sections:
+                        section = report.sections[section_label]
+                        # Need to ensure sections start at level 2 or higher, since title is level 1
+                        header_level = max(2, section.header_level)
+                        header_markers = "#" * header_level
+                        section_content = f"{header_markers} {section.header}\n\n{section.content}\n\n"
+                        complete_markdown += section_content
                 
-                for line in lines:
-                    # Handle headers (# Header)
-                    if line.startswith("#"):
-                        # Add any accumulated paragraph
-                        if current_paragraph:
-                            story.append(Paragraph(current_paragraph, normal_style))
-                            story.append(Spacer(1, 0.15*inch))
-                            current_paragraph = ""
-                        
-                        # Determine header level
-                        level = 0
-                        for char in line:
-                            if char == '#':
-                                level += 1
-                            else:
-                                break
-                        
-                        header_text = line[level:].strip()
-                        header_style = styles['Heading{}'.format(min(level, 4))]
-                        story.append(Paragraph(header_text, header_style))
-                        story.append(Spacer(1, 0.15*inch))
-                    
-                    # Handle empty lines as paragraph breaks
-                    elif line.strip() == "":
-                        if current_paragraph:
-                            story.append(Paragraph(current_paragraph, normal_style))
-                            story.append(Spacer(1, 0.15*inch))
-                            current_paragraph = ""
-                    
-                    # Add to current paragraph
-                    else:
-                        current_paragraph += line + " "
+                # Add footer
+                complete_markdown += f"\n\n---\n\n*Generated by Bobby on {datetime.now().strftime('%Y-%m-%d %H:%M')}*"
                 
-                # Add any remaining paragraph
-                if current_paragraph:
-                    story.append(Paragraph(current_paragraph, normal_style))
+                # Add the entire document as a single section to avoid hierarchy issues
+                pdf.add_section(Section(complete_markdown))
                 
-                # Build the PDF
-                doc.build(story)
-                logger.info(f"Generated PDF report with reportlab: {output_path}")
+                # Set metadata
+                pdf.meta["title"] = report.title
+                pdf.meta["subject"] = report.abstract if report.abstract else "Report generated by Bobby"
+                pdf.meta["creator"] = "Bobby Report Manager"
+                
+                # Save the PDF
+                pdf.save(output_path)
+                
                 return output_path
-            except ImportError:
-                logger.warning("reportlab not available, trying pip to install needed packages...")
                 
-                # Try to install a PDF library using pip
+            except ImportError:
+                logger.warning("markdown-pdf not available, trying to install it...")
+                
+                # Try to install markdown-pdf using pip
                 import subprocess
                 try:
                     subprocess.run(
-                        [sys.executable, "-m", "pip", "install", "markdown2pdf"],
+                        [sys.executable, "-m", "pip", "install", "markdown-pdf"],
                         check=True,
                         capture_output=True
                     )
-                    logger.info("Successfully installed markdown2pdf, please try again")
-                except:
-                    try:
-                        subprocess.run(
-                            [sys.executable, "-m", "pip", "install", "reportlab"],
-                            check=True,
-                            capture_output=True
-                        )
-                        logger.info("Successfully installed reportlab, please try again")
-                    except:
-                        # As a last resort, just save the markdown file
-                        md_path = output_path.replace(".pdf", ".md")
-                        with open(md_path, 'w', encoding='utf-8') as f:
-                            f.write(markdown_content)
-                        logger.error(f"Could not generate PDF, saved markdown to: {md_path}")
-                        return md_path
-                
-                logger.info("Please run the command again to use the newly installed library")
-                return None
-                
+                    
+                    # Save markdown file as fallback
+                    md_path = output_path.replace(".pdf", ".md")
+                    with open(md_path, 'w', encoding='utf-8') as f:
+                        f.write(markdown_content)
+                    
+                    return None
+                    
+                except Exception as pip_error:
+                    
+                    # As a fallback, just save the markdown file
+                    md_path = output_path.replace(".pdf", ".md")
+                    with open(md_path, 'w', encoding='utf-8') as f:
+                        f.write(markdown_content)
+                    
+                    return md_path
+        
         except Exception as e:
-            logger.error(f"Error generating PDF: {e}")
             
             # Fallback: save as markdown if PDF generation fails
             md_path = output_path.replace(".pdf", ".md")
             with open(md_path, 'w', encoding='utf-8') as f:
                 f.write(markdown_content)
-            logger.error(f"Could not generate PDF, saved markdown to: {md_path}")
             return md_path
 
     def get_report(self, report_label: str) -> Optional[Report]:
