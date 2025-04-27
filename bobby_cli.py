@@ -13,7 +13,11 @@ from rich.live import Live
 from rich import box
 import time
 import os
-
+from rich.layout import Layout
+from rich.align import Align
+from rich.progress import Spinner
+import json
+import threading
 from bobby_core import BobbyCore
 
 console = Console()
@@ -29,7 +33,16 @@ class BobbyCLI:
     def __init__(self, db_path: str):
         """Initialize the CLI with database path."""
         self.core = BobbyCore(db_path)
-        
+
+    def render_loader(self, elapsed: float, finished: bool = False) -> Panel:
+        left, right = ("[bold red]■[/bold red]", "[bold blue]■[/bold blue]") \
+                    if int(elapsed * 10) % 2 else ("[bold blue]■[/bold blue]", "[bold red]■[/bold red]")
+        if finished:
+            msg = f"[bold yellow]✓ Thought for {elapsed:.1f}s[/bold yellow]"
+        else:
+            msg = f"{left} [bold]Thinking…[/bold] {right} [dim]{elapsed:.1f}s[/dim]"
+        return Panel(Align.center(Text.from_markup(msg), vertical="middle"), border_style="blue", box=box.ROUNDED)
+
     def display_animation(self):
         """Display a cool title animation with police lights."""
         import itertools
@@ -89,13 +102,13 @@ class BobbyCLI:
         """Display a tool call with syntax highlighting."""
         if tool_name == "query_database":
             syntax = Syntax(tool_input['query'], "sql", theme="monokai", line_numbers=False)
-            console.print(Panel(syntax, title="[bold green]Executing SQL Query[/bold green]", border_style="green"))
+            console.print(Panel(syntax, title="[bold red]Query[/bold red]", border_style="red"))
         elif tool_name == "batch_query":
             console.print(f"[bold blue]Executing batch of {len(tool_input['queries'])} queries:[/bold blue]")
             for query_info in tool_input['queries']:
                 query = query_info['query']
                 syntax = Syntax(query, "sql", theme="monokai", line_numbers=False)
-                console.print(Panel(syntax, title=f"[green]{query_info['name']}[/green]", border_style="green"))
+                console.print(Panel(syntax, title=f"[red]{query_info['name']}[/red]", border_style="red"))
     
     def display_results(self, results: str):
         """Display results in a formatted panel."""
@@ -180,125 +193,142 @@ class BobbyCLI:
         return current_text_buffer, tool_calls, not in_tool_block
     
     def process_question_streaming(self, question: str):
-        """Process a user question and display the analysis process with streaming."""
-        from rich.align import Align
-        from rich.live import Live
+        # Start without displaying a loader
+        result_holder = {}
 
-        # Custom blue/red flashing loader with timer
-        def get_loader_panel(frame: int, elapsed: float):
-            # Swap colors every frame
-            if frame % 2 == 0:
-                left, right = "[bold red]■[/bold red]", "[bold blue]■[/bold blue]"
-            else:
-                left, right = "[bold blue]■[/bold blue]", "[bold red]■[/bold red]"
-            loader = f"{left} [bold]Thinking...[/bold] {right} [dim]{elapsed:.1f}s[/dim]"
-            return Panel(
-                Align.center(Text.from_markup(loader), vertical="middle"),
-                border_style="blue",
-                box=box.ROUNDED,
-                height=3
+        # Show a simple "Waiting for data..." status while the worker thread runs
+        with console.status("[cyan]Connecting to Bobby...", spinner="dots") as status:
+            def worker():
+                result_holder["parts"] = self.core.get_conversation_parts_streaming(question)
+
+            t = threading.Thread(target=worker)
+            t.start()
+            t.join()  # Wait for the initial data to be ready
+
+            # stop the status spinner
+            status.stop()
+        
+        # Only create the layout and loader once we have the stream
+        parts = result_holder["parts"]
+        stream = parts["stream"]
+        messages = parts["messages"]
+        system_prompt = parts["system_prompt"]
+        
+        # Process conversation turn - with proper tool handling
+        while True:  # Loop to handle iterative tool calls
+            # Now set up the layout for streaming
+            layout = Layout()
+            layout.split_column(
+                Layout(name="loader", size=3),
+                Layout(name="content"),
             )
-
-        # Run the animation while waiting for streaming setup
-        import threading
-        result = [None]
-
-        def worker():
-            result[0] = self.core.get_conversation_parts_streaming(question)
-
-        t = threading.Thread(target=worker)
-        t.start()
-        
-        # Track thinking time while thread is running
-        start_time = time.time()
-        frame = 0
-        
-        # Only keep the most recent thinking panel in view
-        with Live(get_loader_panel(0, 0.0), refresh_per_second=10, console=console) as live:
-            while t.is_alive():
-                elapsed = time.time() - start_time
-                live.update(get_loader_panel(frame, elapsed))
-                time.sleep(0.1)
-                frame += 1
+            layout["content"].update(Align.center(""))
             
-            # Thread is done, join it
-            t.join()
-            
-            # Just stop showing the thinking timer once thread is done
-            # Don't add the "Thought for X seconds" panel here
-            # The live display will end naturally and the stream content
-            # will be displayed in _handle_stream_events
-        
-        conversation_parts = result[0]
-        messages = conversation_parts['messages']
-        stream = conversation_parts['stream']
-        system_prompt = conversation_parts['system_prompt']
-        
-        # Process the streaming response
-        try:
-            while True:  # Loop to handle iterative tool calls
+            start_time = time.time()
+            content_buffer = ""
+            tool_calls = []
+            in_tool = False
+            cur_tool = None
+
+            # Only start Live display after we have the stream
+            with Live(layout, refresh_per_second=10, console=console) as live:
+                try:
+                    for event in stream:
+                        now = time.time() - start_time
+                        layout["loader"].update(self.render_loader(now))
+                        
+                        if event.type == "content_block_delta" and event.delta.type == "text_delta":
+                            content_buffer += event.delta.text
+                            layout["content"].update(
+                                Panel(content_buffer, title="[bold blue]Bobby[/bold blue]", border_style="blue")
+                            )
+
+                        elif event.type == "content_block_start" and event.content_block.type == "tool_use":
+                            in_tool = True
+                            cur_tool = {
+                                "id": event.content_block.id,
+                                "name": event.content_block.name,
+                                "json": ""
+                            }
+
+                        elif event.type == "content_block_delta" and event.delta.type == "input_json_delta" and in_tool:
+                            cur_tool["json"] += event.delta.partial_json
+
+                        elif event.type == "content_block_stop" and in_tool:
+                            tool_calls.append(cur_tool)
+                            in_tool = False
+                            cur_tool = None
+
+                        live.refresh()
+                        time.sleep(0.05)  # smooth!
+                    
+                    # Final update showing completion
+                    elapsed = time.time() - start_time
+                    layout["loader"].update(self.render_loader(elapsed, finished=True))
+                    live.refresh()
                 
-                # Get the streamed content and any tool calls
-                # IMPORTANT: We're now relying on this method to display the content
-                # and NOT re-displaying it afterward
-                current_text_buffer, tool_calls, is_complete = self._handle_stream_events(stream)
-                
-                # Handle any tool calls
-                if tool_calls:
-                    
-                    # Package the response content for message update
-                    response_content = []
-                    if current_text_buffer.strip():
-                        response_content.append({"type": "text", "text": current_text_buffer})
-                    
-                    # Process each tool call
-                    tool_results = []
-                    for tool in tool_calls:
-                        response_content.append({
-                            "type": "tool_use",
-                            "id": tool["id"],
-                            "name": tool["name"],
-                            "input": tool["input"]
-                        })
-                        
-                        # Display and execute the tool
-                        self.display_tool_call(tool["name"], tool["input"])
-                        
-                        with console.status(f"[cyan]Executing {tool['name']}...", spinner="arc"):
-                            tool_result = self.core.process_tool_call(tool["name"], tool["input"])
-                        
-                        self.display_results(tool_result)
-                        
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tool["id"],
-                            "content": tool_result
-                        })
-                    
-                    # Add the assistant's response with tool calls to messages
-                    messages.append({"role": "assistant", "content": response_content})
-                    
-                    # Add all tool results in a single user message
-                    messages.append({"role": "user", "content": tool_results})
-                    
-                    # Get next streaming response to continue the conversation
-                    with console.status("[bold white]Analyzing results...", spinner="dots"):
-                        stream = self.core.process_next_turn_streaming(messages, response_content, system_prompt)
-                    
-                    # Continue with the next iteration to process the new stream
-                    continue
-                else:
-                    # No tool calls, just end the conversation turn
-                    if current_text_buffer.strip():
-                        # Add final response to memory
-                        final_response = {"role": "assistant", "content": [{"type": "text", "text": current_text_buffer}]}
-                        self.core.add_to_memory(final_response)
+                except Exception as e:
+                    logger.exception("Error in streaming process")
+                    console.print(f"\n[bold red]Streaming error:[/bold red] {str(e)}")
                     break
+            
+            # Check if we have any tool calls to process
+            if tool_calls:
+                # Package the response content for message update
+                response_content = []
+                if content_buffer.strip():
+                    response_content.append({"type": "text", "text": content_buffer})
+                
+                # Process each tool call
+                tool_results = []
+                for tool in tool_calls:
+                    tool_input = json.loads(tool["json"])
+                    tool_id = tool["id"]
+                    tool_name = tool["name"]
                     
-        except Exception as e:
-            logger.exception("Error in streaming process")
-            console.print(f"\n[bold red]Streaming error:[/bold red] {str(e)}")
-    
+                    response_content.append({
+                        "type": "tool_use",
+                        "id": tool_id,
+                        "name": tool_name,
+                        "input": tool_input
+                    })
+                    
+                    # Display and execute the tool
+                    self.display_tool_call(tool_name, tool_input)
+                    
+                    with console.status(f"[cyan]Executing {tool_name}...", spinner="arc"):
+                        tool_result = self.core.process_tool_call(tool_name, tool_input)
+                    
+                    self.display_results(tool_result)
+                    
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_id,
+                        "content": tool_result
+                    })
+                
+                # Add the assistant's response with tool calls to messages
+                messages.append({"role": "assistant", "content": response_content})
+                
+                # Add all tool results in a single user message
+                messages.append({"role": "user", "content": tool_results})
+                
+                # Get next streaming response to continue the conversation
+                with console.status("[bold white]Analyzing results...", spinner="dots"):
+                    stream = self.core.process_next_turn_streaming(messages, response_content, system_prompt)
+                
+                # Continue with the next iteration to process the new stream
+                continue
+            
+            else:
+                # No tool calls, just end the conversation turn
+                if content_buffer.strip():
+                    # Add final response to memory
+                    final_response = {"role": "assistant", "content": [{"type": "text", "text": content_buffer}]}
+                    self.core.add_to_memory(final_response)
+                break
+
+        
     def run_interactive_mode(self):
         """Run the interactive mode with a colorful prompt."""
         self.display_animation()
