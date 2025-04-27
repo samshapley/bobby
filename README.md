@@ -1,97 +1,96 @@
-# UK Police Data API Extractor
+# Bobby: UK Police Data SQL Agent
 
-A Python library for extracting data from the UK Police Data API and saving it to CSV files.
+Bobby is an intelligent command-line agent for exploring, analyzing, and reporting on UK Police data. It combines a conversational AI (powered by Claude) with a rich SQLite database of UK police data, letting you ask questions in plain English and get answers, insights, and even roast-worthy stats about police departments.
 
-## Features
+## What is Bobby?
 
-- Extract data from all UK Police Data API endpoints
-- Save data to CSV files
-- Flatten nested JSON structures for easier analysis
-- Comprehensive logging
-- Full test coverage
-- Clear separation of concerns
+Bobby is your data detective. It pulls the latest UK Police data (crimes, outcomes, forces, neighborhoods, stop & search, and more), loads it into a local SQLite database, and lets you query it using natural language. Bobby writes and runs SQL for you, explains its reasoning, and presents results in a beautiful, interactive CLI.
 
-## Installation
+**Key Features:**
+- Conversational interface: Ask questions, get answers, see the agent's thought process.
+- Automatic SQL: Bobby writes and executes SQL queries for you.
+- Data coverage: Crimes, outcomes, police forces, neighborhoods, stop & search, and more.
+- Animated, colorful CLI with progress bars, syntax highlighting, and fun police-themed effects.
+- Extensible: Add new data sources, reports, or agent skills.
 
-Clone this repository:
+---
+
+## Quickstart
+
+### 1. Install Requirements
 
 ```bash
-git clone <repository_url>
-cd uk-police-api-extractor
+pip install -r requirements.txt
 ```
 
-## Usage
+You’ll also need an [Anthropic Claude API key](https://console.anthropic.com/) for the conversational AI. Set it as an environment variable:
 
-### Basic Example
-
-```python
-from police_api_extractor import CrimeExtractor
-
-# Create a crime extractor
-extractor = CrimeExtractor()
-
-# Extract street-level crimes for a specific location
-data, filepath = extractor.extract_street_crimes_to_csv(
-    lat=51.5074,  # London
-    lng=-0.1278,
-    date="2023-01",  # Optional, defaults to latest month
-    output_dir="output"  # Optional, defaults to "output"
-)
-
-print(f"Saved {len(data)} records to {filepath}")
+```bash
+export ANTHROPIC_API_KEY=your_api_key_here
 ```
 
-### Available Extractors
+### 2. Pull the Latest Data
 
-The library includes extractors for different categories of data:
+Run the data pull script to fetch the latest UK Police data and build the SQLite database:
 
-- `CrimeExtractor`: For crime-related endpoints
-- `NeighborhoodExtractor`: For neighborhood-related endpoints
-- `StopsExtractor`: For stop and search related endpoints
-- `ForceExtractor`: For police force related endpoints
+```bash
+python data_pull_script.py --csv-dir csv_data --db-path db_data/police_data.db
+```
 
-### More Examples
+This will:
+- Download and save all relevant data as CSVs in `csv_data/`
+- Build a SQLite database at `db_data/police_data.db`
 
-Check the `examples/` directory for more detailed examples:
+### 3. Run Bobby’s CLI
 
-- `street_crime_example.py`: Shows how to extract street-level crime data
-- `neighborhood_example.py`: Shows how to extract neighborhood data
+Start the interactive agent:
 
-## API Endpoints Covered
+```bash
+python bobby_cli.py --db-path db_data/police_data.db --interactive
+```
 
-### Crime-related Endpoints
+Or ask a one-off question:
 
-- Street level crimes
-- Street level outcomes
-- Crimes at location
-- Crimes with no location
-- Crime categories
-- Outcomes for a specific crime
+```bash
+python bobby_cli.py --db-path db_data/police_data.db --question "Which city had the most violent crimes last month?"
+```
 
-### Neighborhood-related Endpoints
+---
 
-- List of neighborhoods
-- Specific neighborhood details
-- Neighborhood boundary
-- Neighborhood team
-- Neighborhood events
-- Neighborhood priorities
-- Locate neighborhood
+## What Can I Ask Bobby?
 
-### Stop and Search-related Endpoints
+- "Show me the top 5 crime categories in London for 2023-01."
+- "Which police force had the most stop and searches in Manchester?"
+- "List all neighborhoods in the West Midlands force."
+- "How many crimes had no outcome in Liverpool last month?"
+- "Who are the senior officers for the Met Police?"
 
-- Stop and searches by area
-- Stop and searches by location
-- Stop and searches with no location
-- Stop and searches by force
+Bobby will:
+- Analyze your question
+- Write and run the necessary SQL
+- Show you the results, with explanations and context
 
-### Force-related Endpoints
+---
 
-- List of forces
-- Specific force details
-- Force senior officers
+## Data Sources
 
-## Development
+Bobby uses the [UK Police Data API](https://data.police.uk/docs/) and covers:
+
+- Street-level crimes & outcomes
+- Police forces & senior officers
+- Neighborhoods & boundaries
+- Stop and search data
+
+All data is stored locally in a SQLite database for fast querying.
+
+---
+
+## Developer Guide
+
+- `data_pull_script.py`: Extracts data from the UK Police API and builds the SQLite database.
+- `bobby_core.py`: Core logic for the agent (SQL, Claude API, tool calls, etc).
+- `bobby_cli.py`: The interactive, animated command-line interface.
+- `police_api_extractor/`: Library for extracting and flattening UK Police API data.
 
 ### Running Tests
 
@@ -99,6 +98,10 @@ Check the `examples/` directory for more detailed examples:
 python -m unittest discover tests
 ```
 
-## License
+---
 
-MIT
+Built by Sam Shapley. Powered by [Anthropic Claude](https://www.anthropic.com/) and the [UK Police Data API](https://data.police.uk/).
+
+## Contributing
+
+Pull requests and issues welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
