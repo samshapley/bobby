@@ -4,3 +4,4 @@ anthropic
 rich
 tabulate
 pytest
+markdown
