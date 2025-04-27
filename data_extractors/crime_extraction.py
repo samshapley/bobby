@@ -68,30 +68,68 @@ def extract_crime_data(
             logger.info(f"Extracting street-level crimes for {city['name']}")
             
             # Extract street-level crimes
-            _, filepath = crime_extractor.extract_street_crimes_to_csv(
+            crimes_data, temp_filepath = crime_extractor.extract_street_crimes_to_csv(
                 lat=city["lat"],
                 lng=city["lng"],
                 date=latest_date,
                 output_dir=output_dir,
                 filename=f"crimes_{city['name']}_{latest_date}"
             )
-            if filepath:
-                filepaths.append(filepath)
-                logger.info(f"Successfully extracted street-level crimes for {city['name']}")
+            
+            # We keep the original file for backward compatibility, but also
+            # create an enhanced version with additional metadata for the consolidated schema
+            if crimes_data:
+                # Add metadata to the dataframe
+                for crime in crimes_data:
+                    crime['city'] = city['name']
+                    crime['data_date'] = latest_date
+                    crime['location_type'] = 'street'
+                
+                # Save enhanced version
+                enhanced_filepath = crime_extractor.save_to_csv(
+                    data=crimes_data,
+                    filename=f"crimes_{city['name']}_{latest_date}",
+                    output_dir=output_dir
+                )
+                
+                if enhanced_filepath:
+                    filepaths.append(enhanced_filepath)
+                    logger.info(f"Successfully extracted street-level crimes for {city['name']} with metadata")
+            elif temp_filepath:
+                filepaths.append(temp_filepath)
+                logger.info(f"Added original street-level crimes file for {city['name']}")
             
             # Extract street-level outcomes if requested
             if collect_outcomes:
                 logger.info(f"Extracting street-level outcomes for {city['name']}")
-                _, outcomes_filepath = crime_extractor.extract_street_outcomes_to_csv(
+                outcomes_data, temp_outcomes_filepath = crime_extractor.extract_street_outcomes_to_csv(
                     lat=city["lat"],
                     lng=city["lng"],
                     date=latest_date,
                     output_dir=output_dir,
                     filename=f"outcomes_{city['name']}_{latest_date}"
                 )
-                if outcomes_filepath:
-                    filepaths.append(outcomes_filepath)
-                    logger.info(f"Successfully extracted street-level outcomes for {city['name']}")
+                
+                # Similar to crimes, add metadata for consolidated schema
+                if outcomes_data:
+                    # Add metadata to the dataframe
+                    for outcome in outcomes_data:
+                        outcome['city'] = city['name']
+                        outcome['data_date'] = latest_date
+                    
+                    # Save enhanced version
+                    enhanced_outcomes_filepath = crime_extractor.save_to_csv(
+                        data=outcomes_data,
+                        filename=f"outcomes_{city['name']}_{latest_date}",
+                        output_dir=output_dir
+                    )
+                    
+                    if enhanced_outcomes_filepath:
+                        filepaths.append(enhanced_outcomes_filepath)
+                        logger.info(f"Successfully extracted street-level outcomes for {city['name']} with metadata")
+                elif temp_outcomes_filepath:
+                    filepaths.append(temp_outcomes_filepath)
+                    logger.info(f"Added original street-level outcomes file for {city['name']}")
             
         except Exception as e:
             logger.error(f"Error extracting crime data for {city['name']}: {e}")
@@ -107,14 +145,33 @@ def extract_crime_data(
                 force_id = force.get("id")
                 if force_id:
                     try:
-                        data, filepath = crime_extractor.extract_crimes_no_location_to_csv(
+                        no_loc_data, temp_filepath = crime_extractor.extract_crimes_no_location_to_csv(
                             force_id=force_id,
                             date=latest_date,
                             output_dir=output_dir
                         )
-                        if filepath:
-                            filepaths.append(filepath)
-                            logger.info(f"Extracted {len(data)} crimes with no location for {force_id}")
+                        
+                        # Add metadata for consolidated schema
+                        if no_loc_data:
+                            # Add metadata to the dataframe
+                            for crime in no_loc_data:
+                                crime['force_id'] = force_id
+                                crime['data_date'] = latest_date
+                                crime['location_type'] = 'none'
+                            
+                            # Save enhanced version
+                            enhanced_filepath = crime_extractor.save_to_csv(
+                                data=no_loc_data,
+                                filename=f"crimes_no_location_{force_id}_{latest_date}",
+                                output_dir=output_dir
+                            )
+                            
+                            if enhanced_filepath:
+                                filepaths.append(enhanced_filepath)
+                                logger.info(f"Extracted {len(no_loc_data)} crimes with no location for {force_id} with metadata")
+                        elif temp_filepath:
+                            filepaths.append(temp_filepath)
+                            logger.info(f"Added original no-location crimes file for {force_id}")
                     except Exception as e:
                         logger.error(f"Error extracting crimes with no location for force '{force_id}': {e}")
         except Exception as e:
@@ -129,21 +186,27 @@ def extract_crime_data(
         # Example implementation for city centers:
         for city in cities:
             try:
-                data = crime_extractor.get_crimes_at_location(
+                at_loc_data = crime_extractor.get_crimes_at_location(
                     lat=city["lat"],
                     lng=city["lng"],
                     date=latest_date
                 )
                 
-                if data:
+                if at_loc_data:
+                    # Add metadata for consolidated schema
+                    for crime in at_loc_data:
+                        crime['city'] = city['name']
+                        crime['data_date'] = latest_date
+                        crime['location_type'] = 'specific'
+                    
                     filepath = crime_extractor.save_to_csv(
-                        data=data,
+                        data=at_loc_data,
                         filename=f"crimes_at_location_{city['name']}_{latest_date}",
                         output_dir=output_dir
                     )
                     if filepath:
                         filepaths.append(filepath)
-                        logger.info(f"Extracted {len(data)} crimes at location for {city['name']}")
+                        logger.info(f"Extracted {len(at_loc_data)} crimes at location for {city['name']} with metadata")
             except Exception as e:
                 logger.error(f"Error extracting crimes at location for {city['name']}: {e}")
     
@@ -167,14 +230,20 @@ def extract_crime_data(
         logger.info("Extracting last updated date information")
         last_updated = crime_extractor.get_last_updated()
         if last_updated:
+            # Add data_type field for consolidated schema
+            if isinstance(last_updated, dict):
+                last_updated['data_type'] = 'crime'
+                last_updated['data_date'] = latest_date
+            
             last_updated_filepath = crime_extractor.save_to_csv(
-                data=[last_updated],  # Convert to list for consistency
+                data=[last_updated] if not isinstance(last_updated, list) else last_updated,
                 filename=f"crime_last_updated_{latest_date}",
                 output_dir=output_dir
             )
+            
             if last_updated_filepath:
                 filepaths.append(last_updated_filepath)
-                logger.info("Extracted last updated date information")
+                logger.info("Extracted last updated date information with metadata")
     except Exception as e:
         logger.error(f"Error extracting last updated date information: {e}")
     

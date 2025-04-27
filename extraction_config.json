@@ -7,7 +7,9 @@
         "db_path": "db_data/police_data.db",
         "replace_db": true,
         "save_metadata": true,
-        "historical_months": 2
+        "historical_months": 2,
+        "use_consolidated_schema": true,
+        "schema_path": "schema/consolidated_schema.sql"
     },
     "cities": [
         {"name": "london", "lat": 51.5074, "lng": -0.1278},

@@ -26,10 +26,15 @@ class BobbyCore:
     
     # Database Schema Information
     DB_SCHEMA = """
-Database contains UK Police data with the following main tables:
+Database contains UK Police data with the following consolidated tables:
 
-1. Crimes Tables - Named like crimes_[city]_[date]:
+1. Crimes Table:
+   - id: Unique identifier for each crime record
+   - city: City where the crime occurred (e.g., "london", "manchester")
+   - data_date: Month in YYYY-MM format
+   - force_id: Police force identifier (for crimes with no location)
    - category: Crime category (e.g., "theft-from-the-person", "violent-crime")
+   - location_type: Type of location data ('street', 'specific', 'none')
    - location_latitude, location_longitude: Geographic coordinates
    - location_street_name: Street name where crime occurred
    - month: Month of crime in YYYY-MM format
@@ -37,7 +42,11 @@ Database contains UK Police data with the following main tables:
    - outcome_status_category: Category of outcome (e.g., "under-investigation")
    - outcome_status_date: Date of the outcome status
 
-2. Outcomes Tables - Named like outcomes_[city]_[date]:
+2. Outcomes Table:
+   - id: Unique identifier for each outcome record
+   - city: City where the outcome was recorded
+   - data_date: Month in YYYY-MM format
+   - force_id: Police force identifier (for outcomes with no location)
    - category_code: Outcome category code
    - category_name: Full name of outcome category
    - crime_category: Category of the related crime
@@ -45,45 +54,46 @@ Database contains UK Police data with the following main tables:
    - crime_month: Month of related crime
    - date: Date of the outcome
 
-3. Force-related Tables:
-   - police_forces: List of police forces with id and name
-   - force_details_[force_id]: Details about specific police forces
-   - senior_officers_[force_id]: Information about senior officers
-
-4. Neighborhood-related Tables:
-   - neighborhoods_[force_id]: Neighborhoods under specific police forces
-   - neighborhood_details_[force_id]_[neighborhood_id]: Details about specific neighborhoods
-   - neighborhood_boundary_[force_id]_[neighborhood_id]: Geographic boundaries of neighborhoods
-   - neighborhood_team_[force_id]_[neighborhood_id]: Team members of neighborhoods
-   - neighborhood_events_[force_id]_[neighborhood_id]: Events in neighborhoods
-   - neighborhood_priorities_[force_id]_[neighborhood_id]: Priorities for neighborhoods
-
-5. Crime Categories Table:
-   - name: Name of crime category
-   - url: API URL for the category
-
-6. Stop and Search Tables - Named like stops_[force_id]_[date]:
+3. Stops Table (Stop and Search records):
+   - id: Unique identifier for each stop and search record
+   - city: City where the stop occurred (may be NULL for force-level stops)
+   - force_id: Police force that conducted the stop
+   - data_date: Month in YYYY-MM format
+   - stop_type: Type of stop data ('standard', 'area', 'location', 'no_location')
    - age_range: Age range of the person stopped
    - gender: Gender of the person stopped
    - object_of_search: Reason for the stop
    - datetime: Date and time of the stop
+   - location_latitude, location_longitude: Geographic coordinates (may be NULL)
    - outcome: Outcome of the stop and search
-   - operation_name: Name of the operation (if applicable)
    - type: Type of stop and search
    - officer_defined_ethnicity: Ethnicity as defined by the officer
    - self_defined_ethnicity: Ethnicity as defined by the person stopped
 
-7. Additional Stop and Search Tables:
-   - stops_area_[city]_[date]: Stops within a 1-mile radius of city centers
-   - stops_at_location_[city]_[date]: Stops at specific locations
-   - stops_no_location_[force_id]_[date]: Stops with no location information
-
-8. Additional Crime Tables:
-   - crimes_at_location_[city]_[date]: Crimes at specific locations
-   - crimes_no_location_[force_id]_[date]: Crimes with no location information
-   - crime_last_updated_[date]: Information about when crime data was last updated
+4. Reference and Entity Tables:
+   - police_forces: List of police forces with id and name
+   - senior_officers: Information about senior officers in each force
+   - neighborhoods: Neighborhoods under specific police forces
+   - neighborhood_boundaries: Geographic boundaries of neighborhoods
+   - neighborhood_teams: Team members of neighborhoods
+   - neighborhood_events: Events in neighborhoods
+   - neighborhood_priorities: Priorities for neighborhoods
+   - crime_categories: Standard reference for crime categories
+   - data_updates: Information about when data was last updated
 
 Cities available in the database: london, manchester, birmingham, leeds, liverpool, glasgow, newcastle, cardiff
+
+Query Examples:
+- To get crimes in London for a specific date:
+  SELECT * FROM crimes WHERE city = 'london' AND data_date = '2023-01' LIMIT 10;
+
+- To get counts of different crime types in Manchester:
+  SELECT category, COUNT(*) as count FROM crimes 
+  WHERE city = 'manchester' AND data_date = '2023-01'
+  GROUP BY category ORDER BY count DESC;
+
+- To find stops by a specific force:
+  SELECT * FROM stops WHERE force_id = 'metropolitan' AND data_date = '2023-01' LIMIT 10;
 """
     
     def __init__(self, db_path: str, api_key: Optional[str] = None):

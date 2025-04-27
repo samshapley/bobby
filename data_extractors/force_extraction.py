@@ -38,7 +38,8 @@ def extract_force_data(
     filepaths = []
     
     try:
-        # Get list of all police forces
+        # Get list of all police forces - this table is already structured appropriately
+        # as it contains data for all forces in a single table
         data, filepath = force_extractor.extract_forces_to_csv(output_dir=output_dir)
         if filepath:
             filepaths.append(filepath)
@@ -50,22 +51,63 @@ def extract_force_data(
                 force_id = force.get("id")
                 if force_id:
                     # Extract force details
-                    _, details_filepath = force_extractor.extract_force_details_to_csv(
+                    details_data, temp_details_filepath = force_extractor.extract_force_details_to_csv(
                         force_id=force_id, 
                         output_dir=output_dir
                     )
-                    if details_filepath:
-                        filepaths.append(details_filepath)
-                        logger.info(f"Extracted details for force '{force_id}'")
+                    
+                    # Add metadata to force details for consolidated schema
+                    if details_data:
+                        # Force details is typically a single record, but handle as list
+                        if not isinstance(details_data, list):
+                            details_data = [details_data]
+                            
+                        # Add force_id to each record if it doesn't already exist
+                        for detail in details_data:
+                            if 'force_id' not in detail:
+                                detail['force_id'] = force_id
+                                
+                        # Save with metadata
+                        details_filepath = force_extractor.save_to_csv(
+                            data=details_data,
+                            filename=f"force_details_{force_id}",
+                            output_dir=output_dir
+                        )
+                        
+                        if details_filepath:
+                            filepaths.append(details_filepath)
+                            logger.info(f"Extracted details for force '{force_id}' with metadata")
+                    elif temp_details_filepath:
+                        filepaths.append(temp_details_filepath)
+                        logger.info(f"Added original force details file for '{force_id}'")
                     
                     # Extract senior officers
-                    _, officers_filepath = force_extractor.extract_senior_officers_to_csv(
+                    officers_data, temp_officers_filepath = force_extractor.extract_senior_officers_to_csv(
                         force_id=force_id, 
                         output_dir=output_dir
                     )
-                    if officers_filepath:
-                        filepaths.append(officers_filepath)
-                        logger.info(f"Extracted senior officers for force '{force_id}'")
+                    
+                    # Add metadata to senior officers for consolidated schema
+                    if officers_data:
+                        # Add force_id to each officer record
+                        for officer in officers_data:
+                            if 'force_id' not in officer:
+                                officer['force_id'] = force_id
+                                
+                        # Save with metadata
+                        officers_filepath = force_extractor.save_to_csv(
+                            data=officers_data,
+                            filename=f"senior_officers_{force_id}",
+                            output_dir=output_dir
+                        )
+                        
+                        if officers_filepath:
+                            filepaths.append(officers_filepath)
+                            logger.info(f"Extracted senior officers for force '{force_id}' with metadata")
+                    elif temp_officers_filepath:
+                        filepaths.append(temp_officers_filepath)
+                        logger.info(f"Added original senior officers file for '{force_id}'")
+                        
             except Exception as e:
                 logger.error(f"Error extracting data for force '{force_id}': {e}")
     except Exception as e:

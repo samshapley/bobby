@@ -234,8 +234,8 @@ def extract_all_data(args):
     
     return all_filepaths
 
-def create_sqlite_database(csv_filepaths, db_path="db_data/police_data.db", replace_existing=False):
-    """Create an SQLite database from the extracted CSV files."""
+def create_sqlite_database(csv_filepaths, db_path="db_data/police_data.db", replace_existing=False, schema_path=None, use_consolidated_schema=True):
+    """Create an SQLite database from the extracted CSV files using the consolidated schema."""
     logger.info(f"Creating SQLite database at {db_path}")
     
     # Check if database exists and whether to replace it
@@ -251,6 +251,31 @@ def create_sqlite_database(csv_filepaths, db_path="db_data/police_data.db", repl
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
+        # Initialize the database with the consolidated schema if requested
+        if use_consolidated_schema and schema_path:
+            logger.info(f"Initializing database with consolidated schema from {schema_path}")
+            try:
+                # Use provided schema path or find it relative to script
+                if not os.path.exists(schema_path):
+                    # Try looking for it relative to script location
+                    relative_path = os.path.join(os.path.dirname(__file__), schema_path)
+                    if os.path.exists(relative_path):
+                        schema_path = relative_path
+                    else:
+                        logger.warning(f"Schema file not found at {schema_path} or {relative_path}")
+                        logger.info("Proceeding without schema initialization")
+                        use_consolidated_schema = False
+                
+                if use_consolidated_schema:
+                    with open(schema_path, "r") as f:
+                        schema_script = f.read()
+                    conn.executescript(schema_script)
+                    logger.info("Schema created successfully")
+            except Exception as e:
+                logger.error(f"Error creating schema: {e}")
+                logger.info("Proceeding with default schema approach")
+                use_consolidated_schema = False
+            
         # Process each CSV file
         for filepath in csv_filepaths:
             try:
@@ -258,26 +283,186 @@ def create_sqlite_database(csv_filepaths, db_path="db_data/police_data.db", repl
                 if not filepath or not os.path.exists(filepath):
                     continue
                 
-                # Extract table name from the filepath
+                # Extract information from the filename
                 filename = os.path.basename(filepath)
                 base_name = os.path.splitext(filename)[0]
                 
-                # Clean up table name (remove special characters and spaces)
-                table_name = base_name.replace('-', '_').replace(' ', '_').lower()
+                # Parse the table type, city/force, and date from filename
+                # Examples: crimes_london_2023-01, outcomes_manchester_2023-01, 
+                # neighborhood_details_metropolitan_E01001234, etc.
+                import re
+                
+                # Pattern for tables with city and date (e.g., crimes_london_2023-01)
+                city_pattern = r"^(\w+)_([a-z]+)_(\d{4}-\d{2})$"
+                city_match = re.match(city_pattern, base_name)
+                
+                # Pattern for tables with force_id (e.g., neighborhoods_metropolitan)
+                force_pattern = r"^(\w+)_([a-z_]+)$"
+                force_match = re.match(force_pattern, base_name)
+                
+                # Pattern for detailed tables (e.g., neighborhood_details_metropolitan_E01001234)
+                detailed_pattern = r"^(\w+)_(\w+)_([a-z_]+)_([A-Za-z0-9]+)$"
+                detailed_match = re.match(detailed_pattern, base_name)
                 
                 # Read the CSV file
-                logger.info(f"Importing {filepath} into table {table_name}")
+                logger.info(f"Processing file {filepath}")
                 df = pd.read_csv(filepath)
                 
-                # Write to SQLite
-                df.to_sql(table_name, conn, if_exists="replace", index=False)
-                logger.info(f"Successfully imported {len(df)} rows into {table_name}")
+                if use_consolidated_schema:
+                    # Add metadata columns based on filename pattern
+                    if city_match:
+                        data_type, city, date = city_match.groups()
+                        logger.info(f"Identified as {data_type} data for {city} on {date}")
+                        
+                        # Add metadata columns
+                        df['city'] = city
+                        df['data_date'] = date
+                        
+                        if data_type == 'crimes':
+                            df['location_type'] = 'street'
+                            df.to_sql('crimes', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into crimes table")
+                        
+                        elif data_type == 'outcomes':
+                            df.to_sql('outcomes', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into outcomes table")
+                        
+                        elif data_type == 'stops':
+                            df['stop_type'] = 'standard'
+                            df.to_sql('stops', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into stops table")
+                        
+                        elif data_type == 'stops_area':
+                            df['stop_type'] = 'area'
+                            df.to_sql('stops', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into stops table (area)")
+                        
+                        elif data_type == 'stops_at_location':
+                            df['stop_type'] = 'location'
+                            df.to_sql('stops', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into stops table (at location)")
+                        
+                        elif data_type == 'crimes_at_location':
+                            df['location_type'] = 'specific'
+                            df.to_sql('crimes', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into crimes table (at location)")
+                
+                    elif force_match:
+                        data_type, force_id = force_match.groups()
+                        logger.info(f"Identified as {data_type} data for force {force_id}")
+                        
+                        # Add metadata columns
+                        df['force_id'] = force_id
+                        
+                        if data_type == 'force_details':
+                            # This could be mapped to a consolidated force_details table
+                            df.to_sql('police_forces', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into police_forces table")
+                        
+                        elif data_type == 'senior_officers':
+                            df.to_sql('senior_officers', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into senior_officers table")
+                        
+                        elif data_type == 'neighborhoods':
+                            df.to_sql('neighborhoods', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into neighborhoods table")
+                        
+                        elif data_type == 'stops_no_location':
+                            # Get date from another part of the filename if present
+                            date_match = re.search(r'(\d{4}-\d{2})', base_name)
+                            if date_match:
+                                df['data_date'] = date_match.group(1)
+                            df['stop_type'] = 'no_location'
+                            df.to_sql('stops', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into stops table (no location)")
+                        
+                        elif data_type == 'crimes_no_location':
+                            # Get date from another part of the filename if present
+                            date_match = re.search(r'(\d{4}-\d{2})', base_name)
+                            if date_match:
+                                df['data_date'] = date_match.group(1)
+                            df['location_type'] = 'none'
+                            df.to_sql('crimes', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into crimes table (no location)")
+                
+                    elif detailed_match:
+                        data_type1, data_type2, force_id, neighborhood_id = detailed_match.groups()
+                        logger.info(f"Identified as {data_type1}_{data_type2} data for force {force_id}, neighborhood {neighborhood_id}")
+                        
+                        # Add metadata columns
+                        df['force_id'] = force_id
+                        df['neighborhood_id'] = neighborhood_id
+                        
+                        combined_type = f"{data_type1}_{data_type2}"
+                        
+                        if combined_type == 'neighborhood_details':
+                            # This data might be merged into the main neighborhoods table 
+                            # or kept in a separate neighborhood_details table
+                            df.to_sql('neighborhoods', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into neighborhoods table (details)")
+                        
+                        elif combined_type == 'neighborhood_boundary':
+                            df.to_sql('neighborhood_boundaries', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into neighborhood_boundaries table")
+                        
+                        elif combined_type == 'neighborhood_team':
+                            df.to_sql('neighborhood_teams', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into neighborhood_teams table")
+                        
+                        elif combined_type == 'neighborhood_events':
+                            df.to_sql('neighborhood_events', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into neighborhood_events table")
+                        
+                        elif combined_type == 'neighborhood_priorities':
+                            df.to_sql('neighborhood_priorities', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into neighborhood_priorities table")
+                
+                    else:
+                        # Handle special cases or generic tables
+                        if 'crime_categories' in base_name:
+                            df.to_sql('crime_categories', conn, if_exists="append", index=False)
+                            logger.info(f"Imported {len(df)} rows into crime_categories table")
+                        elif 'crime_last_updated' in base_name:
+                            # Extract date from filename
+                            date_match = re.search(r'(\d{4}-\d{2})', base_name)
+                            if date_match:
+                                date_value = date_match.group(1)
+                                # Convert to data_updates format
+                                for _, row in df.iterrows():
+                                    cursor.execute(
+                                        "INSERT INTO data_updates (data_type, data_date, update_date, details) VALUES (?, ?, ?, ?)",
+                                        ("crime", date_value, datetime.now().isoformat(), json.dumps(row.to_dict()))
+                                    )
+                            logger.info(f"Imported update information into data_updates table")
+                        else:
+                            # For any other tables without a pattern match, use the original approach
+                            # Clean up table name (remove special characters and spaces)
+                            table_name = base_name.replace('-', '_').replace(' ', '_').lower()
+                            df.to_sql(table_name, conn, if_exists="replace", index=False)
+                            logger.info(f"Imported {len(df)} rows into {table_name} table (original format)")
+                else:
+                    # Original approach (before consolidated schema)
+                    # Clean up table name (remove special characters and spaces)
+                    table_name = base_name.replace('-', '_').replace(' ', '_').lower()
+                    
+                    # Read the CSV file
+                    logger.info(f"Importing {filepath} into table {table_name}")
+                    df = pd.read_csv(filepath)
+                    
+                    # Write to SQLite
+                    df.to_sql(table_name, conn, if_exists="replace", index=False)
+                    logger.info(f"Successfully imported {len(df)} rows into {table_name}")
+            
             except Exception as e:
                 logger.error(f"Error importing {filepath}: {e}")
         
         # Close the connection
         conn.close()
-        logger.info("Database creation completed")
+        if use_consolidated_schema:
+            logger.info("Database creation completed with consolidated schema")
+        else:
+            logger.info("Database creation completed with original schema")
+    
     except Exception as e:
         logger.error(f"Error creating database: {e}")
 
@@ -295,6 +480,8 @@ def main():
     parser.add_argument("--timeout", type=int, default=120, help="API request timeout in seconds")
     parser.add_argument("--replace-db", action="store_true", help="Replace existing database if it exists")
     parser.add_argument("--save-metadata", action="store_true", help="Save extraction metadata as JSON")
+    parser.add_argument("--schema-path", default="schema/consolidated_schema.sql", help="Path to the SQL schema file")
+    parser.add_argument("--use-consolidated-schema", action="store_true", default=True, help="Use consolidated schema for the database")
     
     # Data selection options
     parser.add_argument("--cities", default=None, help="Comma-separated list of cities to include (e.g., 'london,manchester')")
@@ -355,7 +542,13 @@ def main():
     # Create SQLite database
     if csv_filepaths:
         logger.info("Creating SQLite database")
-        create_sqlite_database(csv_filepaths, db_path=args.db_path, replace_existing=args.replace_db)
+        create_sqlite_database(
+            csv_filepaths, 
+            db_path=args.db_path, 
+            replace_existing=args.replace_db,
+            schema_path=args.schema_path,
+            use_consolidated_schema=args.use_consolidated_schema
+        )
         
         logger.info("Data pull and database creation completed")
     else:

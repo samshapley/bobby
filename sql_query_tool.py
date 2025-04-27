@@ -158,6 +158,22 @@ def interactive_mode(db_path):
     print("Type 'describe TABLE_NAME' to get table information.")
     print("Type 'help' for more commands.\n")
     
+    # Check if using consolidated schema
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='crimes'")
+    using_consolidated = cursor.fetchone() is not None
+    conn.close()
+    
+    if using_consolidated:
+        print("Using consolidated schema. Examples:")
+        print("  - SELECT * FROM crimes WHERE city='london' AND data_date='2023-01' LIMIT 5;")
+        print("  - SELECT category, COUNT(*) FROM crimes WHERE city='manchester' GROUP BY category;")
+        print("  - SELECT * FROM stops WHERE force_id='metropolitan' AND data_date='2023-01';")
+    else:
+        print("Using original schema with separate tables for each city/date.")
+        print("  - SELECT * FROM crimes_london_2023_01 LIMIT 5;")
+    
     history = []
     
     while True:
@@ -219,8 +235,23 @@ def interactive_mode(db_path):
                 print("  describe TABLE_NAME;   - Show detailed information about a table")
                 print("  help;                  - Show this help message")
                 print("  exit; or quit;         - Exit the interactive mode")
-                print("\nAny other input will be treated as a SQL query.")
-                print("Multi-line queries are supported - continue typing until you end with a semicolon ';'")
+                
+                if using_consolidated:
+                    print("\nConsolidated Schema Examples:")
+                    print("  SELECT * FROM crimes WHERE city='london' AND data_date='2023-01' LIMIT 5;")
+                    print("  SELECT category, COUNT(*) as count FROM crimes WHERE city='manchester' GROUP BY category;")
+                    print("  SELECT officer_defined_ethnicity, COUNT(*) as count FROM stops")
+                    print("    WHERE force_id='metropolitan' GROUP BY officer_defined_ethnicity;")
+                    print("  SELECT n.name, COUNT(p.id) FROM neighborhoods n")
+                    print("    JOIN neighborhood_priorities p ON n.force_id=p.force_id AND n.neighborhood_id=p.neighborhood_id")
+                    print("    WHERE n.force_id='metropolitan' GROUP BY n.name;")
+                else:
+                    print("\nOriginal Schema Examples:")
+                    print("  SELECT * FROM crimes_london_2023_01 LIMIT 5;")
+                    print("  SELECT category, COUNT(*) as count FROM crimes_manchester_2023_01 GROUP BY category;")
+                    print("  SELECT * FROM stops_metropolitan_2023_01 LIMIT 5;")
+                
+                print("\nMulti-line queries are supported - continue typing until you end with a semicolon ';'")
                 continue
             
             # Execute the query if it's not a special command

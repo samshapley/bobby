@@ -61,13 +61,30 @@ def extract_neighborhood_data(
                 force_id = force.get("id")
                 if force_id:
                     # Extract all neighborhoods for this force
-                    data, filepath = neighborhood_extractor.extract_all_neighborhoods_to_csv(
+                    data, temp_filepath = neighborhood_extractor.extract_all_neighborhoods_to_csv(
                         force_id=force_id,
                         output_dir=output_dir
                     )
-                    if filepath:
-                        filepaths.append(filepath)
-                        logger.info(f"Extracted {len(data)} neighborhoods for force '{force_id}'")
+                    
+                    # Add metadata for consolidated schema
+                    if data:
+                        # Add force_id to each neighborhood if it's not already there
+                        for neighborhood in data:
+                            if 'force_id' not in neighborhood:
+                                neighborhood['force_id'] = force_id
+                        
+                        filepath = neighborhood_extractor.save_to_csv(
+                            data=data,
+                            filename=f"neighborhoods_{force_id}",
+                            output_dir=output_dir
+                        )
+                        
+                        if filepath:
+                            filepaths.append(filepath)
+                            logger.info(f"Extracted {len(data)} neighborhoods for force '{force_id}' with metadata")
+                    elif temp_filepath:
+                        filepaths.append(temp_filepath)
+                        logger.info(f"Added original neighborhoods file for force '{force_id}'")
                     
                     # For neighborhoods up to neighborhood_depth, get additional details
                     # If neighborhood_depth is 0, get all neighborhoods
@@ -83,14 +100,28 @@ def extract_neighborhood_data(
                                     force_id=force_id,
                                     neighborhood_id=neighborhood_id
                                 )
-                                details_filepath = neighborhood_extractor.save_to_csv(
-                                    data=details,
-                                    filename=f"neighborhood_details_{force_id}_{neighborhood_id}",
-                                    output_dir=output_dir
-                                )
-                                if details_filepath:
-                                    filepaths.append(details_filepath)
-                                    logger.info(f"Extracted details for neighborhood '{neighborhood_id}'")
+                                
+                                # Add metadata for consolidated schema
+                                if details:
+                                    # Handle both list and single object cases
+                                    if not isinstance(details, list):
+                                        details = [details]
+                                    
+                                    # Add force_id and neighborhood_id if not present
+                                    for detail in details:
+                                        if 'force_id' not in detail:
+                                            detail['force_id'] = force_id
+                                        if 'neighborhood_id' not in detail:
+                                            detail['neighborhood_id'] = neighborhood_id
+                                    
+                                    details_filepath = neighborhood_extractor.save_to_csv(
+                                        data=details,
+                                        filename=f"neighborhood_details_{force_id}_{neighborhood_id}",
+                                        output_dir=output_dir
+                                    )
+                                    if details_filepath:
+                                        filepaths.append(details_filepath)
+                                        logger.info(f"Extracted details for neighborhood '{neighborhood_id}' with metadata")
                                 
                                 # Get neighborhood boundary if requested
                                 if collect_boundaries:
@@ -99,14 +130,28 @@ def extract_neighborhood_data(
                                             force_id=force_id,
                                             neighborhood_id=neighborhood_id
                                         )
-                                        boundary_filepath = neighborhood_extractor.save_to_csv(
-                                            data=boundary,
-                                            filename=f"neighborhood_boundary_{force_id}_{neighborhood_id}",
-                                            output_dir=output_dir
-                                        )
-                                        if boundary_filepath:
-                                            filepaths.append(boundary_filepath)
-                                            logger.info(f"Extracted boundary for neighborhood '{neighborhood_id}'")
+                                        
+                                        # Add metadata for consolidated schema
+                                        if boundary:
+                                            # Boundary data is typically a list of points
+                                            # Add force_id and neighborhood_id to each point
+                                            for i, point in enumerate(boundary):
+                                                if 'force_id' not in point:
+                                                    point['force_id'] = force_id
+                                                if 'neighborhood_id' not in point:
+                                                    point['neighborhood_id'] = neighborhood_id
+                                                # Add sequence number for boundary points
+                                                if 'sequence' not in point:
+                                                    point['sequence'] = i
+                                            
+                                            boundary_filepath = neighborhood_extractor.save_to_csv(
+                                                data=boundary,
+                                                filename=f"neighborhood_boundary_{force_id}_{neighborhood_id}",
+                                                output_dir=output_dir
+                                            )
+                                            if boundary_filepath:
+                                                filepaths.append(boundary_filepath)
+                                                logger.info(f"Extracted boundary for neighborhood '{neighborhood_id}' with metadata")
                                     except Exception as e:
                                         logger.error(f"Error extracting boundary for neighborhood '{neighborhood_id}': {e}")
                                 
@@ -117,14 +162,24 @@ def extract_neighborhood_data(
                                             force_id=force_id,
                                             neighborhood_id=neighborhood_id
                                         )
-                                        team_filepath = neighborhood_extractor.save_to_csv(
-                                            data=team,
-                                            filename=f"neighborhood_team_{force_id}_{neighborhood_id}",
-                                            output_dir=output_dir
-                                        )
-                                        if team_filepath:
-                                            filepaths.append(team_filepath)
-                                            logger.info(f"Extracted team for neighborhood '{neighborhood_id}'")
+                                        
+                                        # Add metadata for consolidated schema
+                                        if team:
+                                            # Team data is typically a list of officers
+                                            for officer in team:
+                                                if 'force_id' not in officer:
+                                                    officer['force_id'] = force_id
+                                                if 'neighborhood_id' not in officer:
+                                                    officer['neighborhood_id'] = neighborhood_id
+                                            
+                                            team_filepath = neighborhood_extractor.save_to_csv(
+                                                data=team,
+                                                filename=f"neighborhood_team_{force_id}_{neighborhood_id}",
+                                                output_dir=output_dir
+                                            )
+                                            if team_filepath:
+                                                filepaths.append(team_filepath)
+                                                logger.info(f"Extracted team for neighborhood '{neighborhood_id}' with metadata")
                                     except Exception as e:
                                         logger.error(f"Error extracting team for neighborhood '{neighborhood_id}': {e}")
                                 
@@ -135,14 +190,23 @@ def extract_neighborhood_data(
                                             force_id=force_id,
                                             neighborhood_id=neighborhood_id
                                         )
-                                        events_filepath = neighborhood_extractor.save_to_csv(
-                                            data=events,
-                                            filename=f"neighborhood_events_{force_id}_{neighborhood_id}",
-                                            output_dir=output_dir
-                                        )
-                                        if events_filepath:
-                                            filepaths.append(events_filepath)
-                                            logger.info(f"Extracted events for neighborhood '{neighborhood_id}'")
+                                        
+                                        # Add metadata for consolidated schema
+                                        if events:
+                                            for event in events:
+                                                if 'force_id' not in event:
+                                                    event['force_id'] = force_id
+                                                if 'neighborhood_id' not in event:
+                                                    event['neighborhood_id'] = neighborhood_id
+                                            
+                                            events_filepath = neighborhood_extractor.save_to_csv(
+                                                data=events,
+                                                filename=f"neighborhood_events_{force_id}_{neighborhood_id}",
+                                                output_dir=output_dir
+                                            )
+                                            if events_filepath:
+                                                filepaths.append(events_filepath)
+                                                logger.info(f"Extracted events for neighborhood '{neighborhood_id}' with metadata")
                                     except Exception as e:
                                         logger.error(f"Error extracting events for neighborhood '{neighborhood_id}': {e}")
                                 
@@ -153,14 +217,23 @@ def extract_neighborhood_data(
                                             force_id=force_id,
                                             neighborhood_id=neighborhood_id
                                         )
-                                        priorities_filepath = neighborhood_extractor.save_to_csv(
-                                            data=priorities,
-                                            filename=f"neighborhood_priorities_{force_id}_{neighborhood_id}",
-                                            output_dir=output_dir
-                                        )
-                                        if priorities_filepath:
-                                            filepaths.append(priorities_filepath)
-                                            logger.info(f"Extracted priorities for neighborhood '{neighborhood_id}'")
+                                        
+                                        # Add metadata for consolidated schema
+                                        if priorities:
+                                            for priority in priorities:
+                                                if 'force_id' not in priority:
+                                                    priority['force_id'] = force_id
+                                                if 'neighborhood_id' not in priority:
+                                                    priority['neighborhood_id'] = neighborhood_id
+                                            
+                                            priorities_filepath = neighborhood_extractor.save_to_csv(
+                                                data=priorities,
+                                                filename=f"neighborhood_priorities_{force_id}_{neighborhood_id}",
+                                                output_dir=output_dir
+                                            )
+                                            if priorities_filepath:
+                                                filepaths.append(priorities_filepath)
+                                                logger.info(f"Extracted priorities for neighborhood '{neighborhood_id}' with metadata")
                                     except Exception as e:
                                         logger.error(f"Error extracting priorities for neighborhood '{neighborhood_id}': {e}")
                                 

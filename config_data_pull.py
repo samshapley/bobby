@@ -60,6 +60,10 @@ def create_args_from_config(config):
     args.replace_db = config.get("extraction", {}).get("replace_db", False)
     args.save_metadata = config.get("extraction", {}).get("save_metadata", False)
     
+    # Schema options
+    args.use_consolidated_schema = config.get("extraction", {}).get("use_consolidated_schema", True)  # Default to using new schema
+    args.schema_path = config.get("extraction", {}).get("schema_path", "schema/consolidated_schema.sql")
+    
     # Historical data
     args.historical = config.get("extraction", {}).get("historical_months", 1)
     
@@ -138,7 +142,14 @@ def main():
     # Create SQLite database
     if csv_filepaths:
         logger.info("Creating SQLite database")
-        create_sqlite_database(csv_filepaths, db_path=extraction_args.db_path, replace_existing=extraction_args.replace_db)
+        # Pass schema options to the database creation function
+        create_sqlite_database(
+            csv_filepaths, 
+            db_path=extraction_args.db_path, 
+            replace_existing=extraction_args.replace_db,
+            schema_path=extraction_args.schema_path if extraction_args.use_consolidated_schema else None,
+            use_consolidated_schema=extraction_args.use_consolidated_schema
+        )
         
         logger.info("Data pull and database creation completed")
     else:

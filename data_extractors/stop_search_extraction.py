@@ -71,33 +71,58 @@ def extract_stop_search_data(
                 try:
                     force_id = force.get("id")
                     if force_id:
-                        data, filepath = stops_extractor.extract_stops_by_force_to_csv(
+                        data, temp_filepath = stops_extractor.extract_stops_by_force_to_csv(
                             force_id=force_id,
                             date=latest_date,
                             output_dir=output_dir
                         )
-                        if filepath:
-                            filepaths.append(filepath)
-                            logger.info(f"Extracted {len(data)} stop and searches for force '{force_id}'")
+                        
+                        # Add metadata for consolidated schema
+                        if data:
+                            # Add metadata to each record
+                            for stop in data:
+                                stop['force_id'] = force_id
+                                stop['data_date'] = latest_date
+                                stop['stop_type'] = 'standard'
                             
-                            # Extract stops with no location if requested
-                            if collect_no_location:
-                                try:
-                                    no_loc_data = stops_extractor.get_stops_no_location(
-                                        force_id=force_id,
-                                        date=latest_date
+                            # Save enhanced version with metadata
+                            filepath = stops_extractor.save_to_csv(
+                                data=data,
+                                filename=f"stops_{force_id}_{latest_date}",
+                                output_dir=output_dir
+                            )
+                            
+                            if filepath:
+                                filepaths.append(filepath)
+                                logger.info(f"Extracted {len(data)} stop and searches for force '{force_id}' with metadata")
+                        elif temp_filepath:
+                            filepaths.append(temp_filepath)
+                            logger.info(f"Added original stop and searches file for force '{force_id}'")
+                            
+                        # Extract stops with no location if requested
+                        if collect_no_location:
+                            try:
+                                no_loc_data = stops_extractor.get_stops_no_location(
+                                    force_id=force_id,
+                                    date=latest_date
+                                )
+                                if no_loc_data:
+                                    # Add metadata for consolidated schema
+                                    for stop in no_loc_data:
+                                        stop['force_id'] = force_id
+                                        stop['data_date'] = latest_date
+                                        stop['stop_type'] = 'no_location'
+                                    
+                                    no_loc_filepath = stops_extractor.save_to_csv(
+                                        data=no_loc_data,
+                                        filename=f"stops_no_location_{force_id}_{latest_date}",
+                                        output_dir=output_dir
                                     )
-                                    if no_loc_data:
-                                        no_loc_filepath = stops_extractor.save_to_csv(
-                                            data=no_loc_data,
-                                            filename=f"stops_no_location_{force_id}_{latest_date}",
-                                            output_dir=output_dir
-                                        )
-                                        if no_loc_filepath:
-                                            filepaths.append(no_loc_filepath)
-                                            logger.info(f"Extracted {len(no_loc_data)} stops with no location for force '{force_id}'")
-                                except Exception as e:
-                                    logger.error(f"Error extracting stops with no location for force '{force_id}': {e}")
+                                    if no_loc_filepath:
+                                        filepaths.append(no_loc_filepath)
+                                        logger.info(f"Extracted {len(no_loc_data)} stops with no location for force '{force_id}' with metadata")
+                            except Exception as e:
+                                logger.error(f"Error extracting stops with no location for force '{force_id}': {e}")
                 except Exception as e:
                     logger.error(f"Error extracting stops for force '{force_id}': {e}")
     except Exception as e:
@@ -108,16 +133,35 @@ def extract_stop_search_data(
         logger.info("Extracting stops by area")
         for city in cities:
             try:
-                data, filepath = stops_extractor.extract_stops_by_area_to_csv(
+                data, temp_filepath = stops_extractor.extract_stops_by_area_to_csv(
                     lat=city["lat"],
                     lng=city["lng"],
                     date=latest_date,
                     output_dir=output_dir,
                     filename=f"stops_area_{city['name']}_{latest_date}"
                 )
-                if filepath:
-                    filepaths.append(filepath)
-                    logger.info(f"Extracted {len(data)} stops by area for {city['name']}")
+                
+                # Add metadata for consolidated schema
+                if data:
+                    # Add metadata to each record
+                    for stop in data:
+                        stop['city'] = city['name']
+                        stop['data_date'] = latest_date
+                        stop['stop_type'] = 'area'
+                    
+                    # Save enhanced version with metadata
+                    filepath = stops_extractor.save_to_csv(
+                        data=data,
+                        filename=f"stops_area_{city['name']}_{latest_date}",
+                        output_dir=output_dir
+                    )
+                    
+                    if filepath:
+                        filepaths.append(filepath)
+                        logger.info(f"Extracted {len(data)} stops by area for {city['name']} with metadata")
+                elif temp_filepath:
+                    filepaths.append(temp_filepath)
+                    logger.info(f"Added original stops by area file for {city['name']}")
             except Exception as e:
                 logger.error(f"Error extracting stops by area for {city['name']}: {e}")
     
@@ -134,20 +178,26 @@ def extract_stop_search_data(
                 # In a real application, you might want to use more specific locations
                 location_id = f"{city['lat']},{city['lng']}"
                 
-                data = stops_extractor.get_stops_at_location(
+                loc_data = stops_extractor.get_stops_at_location(
                     location_id=location_id,
                     date=latest_date
                 )
                 
-                if data:
+                if loc_data:
+                    # Add metadata for consolidated schema
+                    for stop in loc_data:
+                        stop['city'] = city['name']
+                        stop['data_date'] = latest_date
+                        stop['stop_type'] = 'location'
+                    
                     filepath = stops_extractor.save_to_csv(
-                        data=data,
+                        data=loc_data,
                         filename=f"stops_at_location_{city['name']}_{latest_date}",
                         output_dir=output_dir
                     )
                     if filepath:
                         filepaths.append(filepath)
-                        logger.info(f"Extracted {len(data)} stops at location for {city['name']}")
+                        logger.info(f"Extracted {len(loc_data)} stops at location for {city['name']} with metadata")
             except Exception as e:
                 logger.error(f"Error extracting stops at location for {city['name']}: {e}")
     
