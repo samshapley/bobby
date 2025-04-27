@@ -22,9 +22,24 @@ from bobby_core import BobbyCore
 
 console = Console()
 
+# Configure logging
 import logging
-logger = logging.getLogger("bobby_cli")
-logger.setLevel(logging.DEBUG)
+
+# Configure all loggers
+def configure_logging(log_level=logging.WARNING):
+    # Configure the root logger - this affects all loggers without specific configuration
+    logging.basicConfig(level=log_level)
+    
+    # Specifically configure our application logger
+    logger = logging.getLogger("bobby_cli")
+    logger.setLevel(log_level)
+    
+    # Configure specific third-party loggers
+    logging.getLogger("httpx").setLevel(logging.ERROR)  # Only show errors from httpx
+    logging.getLogger("anthropic").setLevel(logging.ERROR)  # Only show errors from anthropic client
+    logging.getLogger("urllib3").setLevel(logging.ERROR)  # Only show errors from urllib3
+    logging.getLogger("httpcore").setLevel(logging.ERROR)  # Only show errors from httpcore
+
 
 
 class BobbyCLI:
@@ -197,7 +212,7 @@ class BobbyCLI:
         result_holder = {}
 
         # Show a simple "Waiting for data..." status while the worker thread runs
-        with console.status("[cyan]Connecting to Bobby...", spinner="dots") as status:
+        with console.status("[red]Connecting to Bobby...", spinner="dots") as status:
             def worker():
                 result_holder["parts"] = self.core.get_conversation_parts_streaming(question)
 
@@ -216,32 +231,41 @@ class BobbyCLI:
         
         # Process conversation turn - with proper tool handling
         while True:  # Loop to handle iterative tool calls
-            # Now set up the layout for streaming
-            layout = Layout()
-            layout.split_column(
-                Layout(name="loader", size=3),
-                Layout(name="content"),
-            )
-            layout["content"].update(Align.center(""))
-            
             start_time = time.time()
             content_buffer = ""
             tool_calls = []
             in_tool = False
             cur_tool = None
 
-            # Only start Live display after we have the stream
-            with Live(layout, refresh_per_second=10, console=console) as live:
+            # Use a Group to combine renderables properly
+            from rich.console import Group
+            
+            # Use Live display with a dynamic content structure
+            with Live(console=console, refresh_per_second=10) as live:
                 try:
                     for event in stream:
                         now = time.time() - start_time
-                        layout["loader"].update(self.render_loader(now))
+                        
+                        # Update the loader
+                        loader = self.render_loader(now)
                         
                         if event.type == "content_block_delta" and event.delta.type == "text_delta":
                             content_buffer += event.delta.text
-                            layout["content"].update(
-                                Panel(content_buffer, title="[bold blue]Bobby[/bold blue]", border_style="blue")
-                            )
+                            
+                            # Create content panel if there's content
+                            if content_buffer.strip():
+                                content_panel = Panel(
+                                    content_buffer, 
+                                    title="[bold blue]Bobby[/bold blue]", 
+                                    border_style="blue",
+                                    expand=True  # Allow panel to expand horizontally
+                                )
+                                # Use Rich Group to properly combine renderables
+                                group_display = Group(loader, content_panel)
+                            else:
+                                group_display = loader
+                                
+                            live.update(group_display)
 
                         elif event.type == "content_block_start" and event.content_block.type == "tool_use":
                             in_tool = True
@@ -259,13 +283,25 @@ class BobbyCLI:
                             in_tool = False
                             cur_tool = None
 
-                        live.refresh()
                         time.sleep(0.05)  # smooth!
                     
                     # Final update showing completion
                     elapsed = time.time() - start_time
-                    layout["loader"].update(self.render_loader(elapsed, finished=True))
-                    live.refresh()
+                    final_loader = self.render_loader(elapsed, finished=True)
+                    
+                    # Create the final display with completed content
+                    if content_buffer.strip():
+                        final_content = Panel(
+                            content_buffer, 
+                            title="[bold blue]Bobby[/bold blue]", 
+                            border_style="blue",
+                            expand=True
+                        )
+                        final_display = Group(final_loader, final_content)
+                    else:
+                        final_display = final_loader
+                        
+                    live.update(final_display)
                 
                 except Exception as e:
                     logger.exception("Error in streaming process")
@@ -327,8 +363,7 @@ class BobbyCLI:
                     final_response = {"role": "assistant", "content": [{"type": "text", "text": content_buffer}]}
                     self.core.add_to_memory(final_response)
                 break
-
-        
+            
     def run_interactive_mode(self):
         """Run the interactive mode with a colorful prompt."""
         self.display_animation()
@@ -370,8 +405,15 @@ def main():
     parser.add_argument('--db-path', type=str, required=True, help='Path to the SQLite database')
     parser.add_argument('--interactive', action='store_true', help='Run in interactive mode')
     parser.add_argument('--question', type=str, help='Question to answer (if not in interactive mode)')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
     
     args = parser.parse_args()
+
+    # Configure logging based on verbosity flag
+    if args.verbose:
+        configure_logging(logging.INFO)
+    else:
+        configure_logging(logging.ERROR)  # Only show errors, no INFO or DEBUG messages
 
     # Check for Anthropic API key
     api_key = os.environ.get("ANTHROPIC_API_KEY")

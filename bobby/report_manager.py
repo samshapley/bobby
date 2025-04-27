@@ -280,7 +280,6 @@ class ReportManager:
 
                 report = Report.from_dict(report_data)
                 self.reports[report.label] = report
-                logger.info(f"Loaded report: {report.title} (label: {report.label})")
             except Exception as e:
                 logger.error(f"Error loading report {report_file}: {e}")
 
@@ -295,8 +294,6 @@ class ReportManager:
         try:
             with open(report_path, 'w') as f:
                 json.dump(report.to_dict(), f, indent=2)
-
-            logger.info(f"Saved report: {report.title} (label: {report.label})")
         except Exception as e:
             logger.error(f"Error saving report {report.label}: {e}")
 
@@ -314,17 +311,14 @@ class ReportManager:
         # Validate the label format
         if not self._is_valid_label(label):
             label = self._convert_to_valid_label(label)
-            logger.warning(f"Label format invalid, converted to: {label}")
 
         # Check if report already exists
         if label in self.reports:
             report = self.reports[label]
             report.update(title=title, abstract=abstract)
-            logger.info(f"Updated existing report: {report.title} (label: {label})")
         else:
             report = Report(title=title, label=label, abstract=abstract)
             self.reports[label] = report
-            logger.info(f"Created new report: {report.title} (label: {label})")
 
         # Save the report
         self._save_report(report)
@@ -353,7 +347,6 @@ class ReportManager:
         """
         # Check if report exists
         if report_label not in self.reports:
-            logger.error(f"Report not found: {report_label}")
             return False
 
         report = self.reports[report_label]
@@ -361,7 +354,6 @@ class ReportManager:
         # Validate the section label format
         if not self._is_valid_label(section_label):
             section_label = self._convert_to_valid_label(section_label)
-            logger.warning(f"Section label format invalid, converted to: {section_label}")
 
         # Create the section
         section = ReportSection(
@@ -376,12 +368,6 @@ class ReportManager:
 
         # Save the report
         self._save_report(report)
-
-        if is_new:
-            logger.info(f"Added section '{header}' to report {report_label}")
-        else:
-            logger.info(f"Updated section '{header}' in report {report_label}")
-
         return True
 
     def update_report_section(
@@ -406,7 +392,6 @@ class ReportManager:
         """
         # Check if report exists
         if report_label not in self.reports:
-            logger.error(f"Report not found: {report_label}")
             return False
 
         report = self.reports[report_label]
@@ -420,13 +405,11 @@ class ReportManager:
         )
 
         if not success:
-            logger.error(f"Section not found: {section_label}")
             return False
 
         # Save the report
         self._save_report(report)
 
-        logger.info(f"Updated section {section_label} in report {report_label}")
         return True
 
     def get_report_as_markdown(self, report_label: str) -> Optional[str]:
@@ -439,7 +422,6 @@ class ReportManager:
             The report in markdown format, or None if not found
         """
         if report_label not in self.reports:
-            logger.error(f"Report not found: {report_label}")
             return None
 
         report = self.reports[report_label]
@@ -450,7 +432,7 @@ class ReportManager:
         report_label: str, 
         output_path: Optional[str] = None
     ) -> Optional[str]:
-        """Generate a PDF from a report.
+        """Generate a PDF from a report using reportlab.
         
         Args:
             report_label: Label of the report to convert
@@ -469,93 +451,8 @@ class ReportManager:
         # Generate markdown
         markdown_content = report.to_markdown()
         
-        # Convert to HTML
-        html = markdown.markdown(
-            markdown_content,
-            extensions=['tables', 'fenced_code', 'codehilite']
-        )
-        
-        # Add CSS for better styling
-        html_template = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>{{ title }}</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    line-height: 1.6;
-                    margin: 2cm;
-                    max-width: 21cm;
-                }
-                h1, h2, h3, h4, h5, h6 {
-                    color: #2c3e50;
-                    margin-top: 1.5em;
-                    margin-bottom: 0.5em;
-                }
-                h1 {
-                    text-align: center;
-                    border-bottom: 2px solid #3498db;
-                    padding-bottom: 10px;
-                    font-size: 2.2em;
-                }
-                a {
-                    color: #3498db;
-                }
-                pre {
-                    background-color: #f8f8f8;
-                    border: 1px solid #ddd;
-                    border-radius: 3px;
-                    padding: 10px;
-                    overflow: auto;
-                }
-                code {
-                    background-color: #f8f8f8;
-                    border-radius: 3px;
-                    padding: 2px 5px;
-                }
-                blockquote {
-                    border-left: 4px solid #3498db;
-                    padding-left: 15px;
-                    color: #555;
-                }
-                table {
-                    border-collapse: collapse;
-                    width: 100%;
-                    margin-bottom: 1em;
-                }
-                th, td {
-                    border: 1px solid #ddd;
-                    padding: 8px;
-                    text-align: left;
-                }
-                th {
-                    background-color: #f2f2f2;
-                    font-weight: bold;
-                }
-                tr:nth-child(even) {
-                    background-color: #f9f9f9;
-                }
-                @page {
-                    size: A4;
-                    margin: 2cm;
-                }
-            </style>
-        </head>
-        <body>
-            {{ content|safe }}
-        </body>
-        </html>
-        """
-        
-        # Render HTML with Jinja2
-        template = jinja2.Template(html_template)
-        rendered_html = template.render(title=report.title, content=html)
-        
         # Determine output path
         if output_path is None:
-            # If path is None, save to desktop
             desktop_path = DEFAULT_DESKTOP_PATH
             if not os.path.exists(desktop_path):
                 desktop_path = os.path.expanduser("~")  # Fallback to home directory
@@ -569,62 +466,133 @@ class ReportManager:
             output_path = os.path.join(desktop_path, filename)
         
         try:
-            # First save the HTML for debugging if needed
-            html_path = os.path.join(self.reports_dir, f"{report.label}_temp.html")
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(rendered_html)
-            
-            # Generate PDF with pdfkit
-            options = {
-                'page-size': 'A4',
-                'margin-top': '2cm',
-                'margin-right': '2cm',
-                'margin-bottom': '2cm',
-                'margin-left': '2cm',
-                'encoding': 'UTF-8',
-                'quiet': ''
-            }
-            
-            # Try to generate PDF from HTML file
+            # Try using markdown2pdf from weasyprint if available
             try:
-                pdfkit.from_file(html_path, output_path, options=options)
-            except Exception as e:
-                # Fallback - try generating directly from string if file method fails
-                logger.warning(f"Trying fallback PDF generation method: {e}")
-                pdfkit.from_string(rendered_html, output_path, options=options)
-                
-            logger.info(f"Generated PDF report: {output_path}")
+                from markdown2pdf import convert
+                convert(markdown_content, output_path)
+                logger.info(f"Generated PDF report with markdown2pdf: {output_path}")
+                return output_path
+            except ImportError:
+                logger.info("markdown2pdf not available, trying reportlab...")
             
-            # Clean up temporary HTML file
+            # If markdown2pdf is not available, try reportlab
             try:
-                os.remove(html_path)
-            except:
-                pass
+                from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                from reportlab.lib.units import inch
+                from reportlab.lib.pagesizes import letter
                 
-            return output_path
-            
+                # Create a basic PDF document
+                doc = SimpleDocTemplate(
+                    output_path,
+                    pagesize=letter,
+                    rightMargin=72, leftMargin=72,
+                    topMargin=72, bottomMargin=72
+                )
+                
+                # Define styles
+                styles = getSampleStyleSheet()
+                title_style = styles['Title']
+                normal_style = styles['Normal']
+                
+                # Convert markdown to basic content
+                # This is a very simple conversion and doesn't handle all markdown features
+                story = []
+                
+                # Add title
+                story.append(Paragraph(report.title, title_style))
+                story.append(Spacer(1, 0.25*inch))
+                
+                # Add abstract if exists
+                if report.abstract:
+                    story.append(Paragraph(f"<i>{report.abstract}</i>", normal_style))
+                    story.append(Spacer(1, 0.25*inch))
+                
+                # Very basic markdown parsing
+                lines = markdown_content.split("\n")
+                current_paragraph = ""
+                
+                for line in lines:
+                    # Handle headers (# Header)
+                    if line.startswith("#"):
+                        # Add any accumulated paragraph
+                        if current_paragraph:
+                            story.append(Paragraph(current_paragraph, normal_style))
+                            story.append(Spacer(1, 0.15*inch))
+                            current_paragraph = ""
+                        
+                        # Determine header level
+                        level = 0
+                        for char in line:
+                            if char == '#':
+                                level += 1
+                            else:
+                                break
+                        
+                        header_text = line[level:].strip()
+                        header_style = styles['Heading{}'.format(min(level, 4))]
+                        story.append(Paragraph(header_text, header_style))
+                        story.append(Spacer(1, 0.15*inch))
+                    
+                    # Handle empty lines as paragraph breaks
+                    elif line.strip() == "":
+                        if current_paragraph:
+                            story.append(Paragraph(current_paragraph, normal_style))
+                            story.append(Spacer(1, 0.15*inch))
+                            current_paragraph = ""
+                    
+                    # Add to current paragraph
+                    else:
+                        current_paragraph += line + " "
+                
+                # Add any remaining paragraph
+                if current_paragraph:
+                    story.append(Paragraph(current_paragraph, normal_style))
+                
+                # Build the PDF
+                doc.build(story)
+                logger.info(f"Generated PDF report with reportlab: {output_path}")
+                return output_path
+            except ImportError:
+                logger.warning("reportlab not available, trying pip to install needed packages...")
+                
+                # Try to install a PDF library using pip
+                import subprocess
+                try:
+                    subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "markdown2pdf"],
+                        check=True,
+                        capture_output=True
+                    )
+                    logger.info("Successfully installed markdown2pdf, please try again")
+                except:
+                    try:
+                        subprocess.run(
+                            [sys.executable, "-m", "pip", "install", "reportlab"],
+                            check=True,
+                            capture_output=True
+                        )
+                        logger.info("Successfully installed reportlab, please try again")
+                    except:
+                        # As a last resort, just save the markdown file
+                        md_path = output_path.replace(".pdf", ".md")
+                        with open(md_path, 'w', encoding='utf-8') as f:
+                            f.write(markdown_content)
+                        logger.error(f"Could not generate PDF, saved markdown to: {md_path}")
+                        return md_path
+                
+                logger.info("Please run the command again to use the newly installed library")
+                return None
+                
         except Exception as e:
             logger.error(f"Error generating PDF: {e}")
-            # Alternative: provide the HTML file as a fallback
-            logger.info(f"PDF generation failed, but HTML saved to: {html_path}")
-            return html_path  # Return the HTML path as a fallback
-
-    def get_available_reports(self) -> List[Dict[str, str]]:
-        """Get a list of available reports.
-
-        Returns:
-            List of dictionaries with report metadata
-        """
-        return [
-            {
-                "title": report.title,
-                "label": report.label,
-                "created_at": report.created_at,
-                "updated_at": report.updated_at,
-                "sections": len(report.sections)
-            }
-            for report in self.reports.values()
-        ]
+            
+            # Fallback: save as markdown if PDF generation fails
+            md_path = output_path.replace(".pdf", ".md")
+            with open(md_path, 'w', encoding='utf-8') as f:
+                f.write(markdown_content)
+            logger.error(f"Could not generate PDF, saved markdown to: {md_path}")
+            return md_path
 
     def get_report(self, report_label: str) -> Optional[Report]:
         """Get a report by label.
@@ -687,7 +655,6 @@ class ReportManager:
             True if successful, False otherwise
         """
         if report_label not in self.reports:
-            logger.error(f"Report not found: {report_label}")
             return False
 
         # Remove from memory
@@ -697,10 +664,8 @@ class ReportManager:
         report_path = os.path.join(self.reports_dir, f"{report_label}.json")
         try:
             os.remove(report_path)
-            logger.info(f"Deleted report: {report_label}")
             return True
         except Exception as e:
-            logger.error(f"Error deleting report {report_label}: {e}")
             return False
 
     def print_report_preview(self, report_label: str):

@@ -242,28 +242,6 @@ Query Examples:
                     "required": ["report_label"]
                 }
             },
-            {
-                "name": "list_available_reports",
-                "description": "Get a list of all available reports",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {}
-                }
-            },
-            {
-                "name": "get_report_preview",
-                "description": "Get a preview of a report as markdown",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "report_label": {
-                            "type": "string",
-                            "description": "Label of the report to preview"
-                        }
-                    },
-                    "required": ["report_label"]
-                }
-            }
         ]
     
     def verify_db_access(self) -> None:
@@ -544,8 +522,8 @@ Query Examples:
         
         # Create system prompt if not already defined
         if not self.system_prompt:
-            self.system_prompt = f"""
-You are a helpful assistant that answers questions about UK Police data by writing and executing SQL queries.
+            self.system_prompt = f"""You are Bobby.
+You are an intelligent AI agent that answers questions about UK Police data by writing and executing SQL queries.
 
 {self.DB_SCHEMA}
 
@@ -566,15 +544,14 @@ Guidelines for SQL queries:
 - Use WHERE clauses to filter data
 - Limit results to a reasonable number with LIMIT when returning large datasets
 
-You can also generate reports from your analyses using the available report tools:
+You can also generate reports from your analyses using the available report tools.
+DO NOT UNDER ANY CIRCUMSTANCES USE THE REPORT TOOLS UNLESS THE USER ASKS FOR A REPORT.
+
 - create_or_update_report: Create a new report with a title, label, and abstract
 - create_or_update_report_section: Add or update a section within a report
 - create_report_pdf: Generate a PDF from a report and save it to the user's desktop
-- list_available_reports: List all available reports
-- get_report_preview: Preview a report's markdown content
 
-The user is not a database expert, so explain your approach in simple terms. Always provide context for your answers.
-"""
+The user is not a database expert, so explain your approach in simple terms. Always provide context for your answers."""
         
         # Use the existing conversation memory if available, otherwise start fresh
         if not self.conversation_memory:
